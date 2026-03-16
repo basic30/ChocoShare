@@ -279,12 +279,12 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
     const peer = new Peer(id, {
       config: {
         iceServers: [
-          { urls: "stun:free.expressturn.com:3478" },
           { urls: "stun:stun.relay.metered.ca:80" },
+          { urls: "stun:free.expressturn.com:3478" },
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun.cloudflare.com:3478" },
           {
-            urls: "turn:free.expressturn.com:3478",
+            urls: "turn:free.expressturn.com:3478?transport=tcp",
             username: "000000002088860057",
             credential: "I+TSjeTYD3+Jd/eANOhkPvvTh8k="
           },
@@ -471,12 +471,12 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
     const peer = new Peer({
       config: {
         iceServers: [
-          { urls: "stun:free.expressturn.com:3478" },
           { urls: "stun:stun.relay.metered.ca:80" },
+          { urls: "stun:free.expressturn.com:3478" },
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun.cloudflare.com:3478" },
           {
-            urls: "turn:free.expressturn.com:3478",
+            urls: "turn:free.expressturn.com:3478?transport=tcp",
             username: "000000002088860057",
             credential: "I+TSjeTYD3+Jd/eANOhkPvvTh8k="
           },
