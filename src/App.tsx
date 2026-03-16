@@ -279,8 +279,7 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
     const peer = new Peer(id, {
       config: {
         iceServers: [
-          {
-            urls: "stun:free.expressturn.com:3478" },
+          { urls: "stun:free.expressturn.com:3478" },
           { urls: "stun:stun.relay.metered.ca:80" },
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun.cloudflare.com:3478" },
@@ -303,7 +302,8 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
     peer.on('connection', (conn) => {
       connectionRef.current = conn;
       let currentIndex = 0;
-      let isTransferring = false; // Local state immune to React closure staleness
+      let isTransferring = false; 
+      let lastUiUpdate = 0; // 🔥 Variable to throttle UI updates based on data processed
 
       const sendInitialData = () => {
         if (payload.type === 'text') {
@@ -317,6 +317,7 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
           const file = files[currentIndex];
           setFileProgress({ current: currentIndex + 1, total: files.length });
           resetSpeed(); 
+          lastUiUpdate = 0; // Reset for new file
           conn.send({ type: 'metadata', name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
         }
       };
@@ -324,40 +325,40 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
       if (conn.open) sendInitialData();
       else conn.on('open', () => sendInitialData());
 
-      const CHUNK_SIZE = 128 * 1024;  
-      const sendNextChunk = async (file: File, startOffset: number) => {
-        let offset = startOffset;  
-        // 🔥 We use a while loop to blast chunks instantly instead of slow setTimeouts
-        while (offset < file.size) {
-          // If the buffer gets too full, pause for 50ms to let the network catch up
-          if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024 * 8) {
-            setTimeout(() => sendNextChunk(file, offset), 50);
-            return; 
-          }
-
-          const slice = file.slice(offset, offset + CHUNK_SIZE);
-          
-          // 🔥 Modern, lightning-fast ArrayBuffer (Replaces the slow FileReader)
-          const buffer = await slice.arrayBuffer(); 
-          
-          conn.send({ type: 'chunk', data: buffer });
-          offset += CHUNK_SIZE;
-          
-          // 🔥 UI Throttle: Only update the progress bar 5% of the time, or at the very end.
-          // This prevents React from lagging and freezing the browser!
-          if (Math.random() < 0.05 || offset >= file.size) {
-             setProgress(Math.min(100, (offset / file.size) * 100));
-          }
-          updateSpeed(offset, file.size);
+      const CHUNK_SIZE = 256 * 1024; // 🔥 256KB - Safe universal maximum
+      
+      const sendNextChunk = async (file: File, offset: number) => {
+        if (offset >= file.size) { 
+          conn.send({ type: 'eof' }); 
+          return; 
         }
         
-        // Once the loop finishes, tell the receiver we are done
-        conn.send({ type: 'eof' });
+        // 🔥 16MB backpressure buffer
+        if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024 * 16) {
+          setTimeout(() => sendNextChunk(file, offset), 5);
+          return; 
+        }
+
+        const slice = file.slice(offset, offset + CHUNK_SIZE);
+        const buffer = await slice.arrayBuffer(); 
+        
+        // 🔥 Send raw buffer instead of JSON object!
+        conn.send(buffer);
+        const newOffset = offset + CHUNK_SIZE;
+        
+        // 🔥 UI Throttle: Only trigger React update every 1 Megabyte
+        if (newOffset - lastUiUpdate > 1024 * 1024 || newOffset >= file.size) {
+           setProgress(Math.min(100, (newOffset / file.size) * 100));
+           lastUiUpdate = newOffset;
+        }
+        updateSpeed(newOffset, file.size);
+        
+        // Yield to the event loop safely
+        setTimeout(() => sendNextChunk(file, newOffset), 0); 
       };
 
       conn.on('data', (data: any) => {
         if (data.type === 'request_metadata') {
-          // If receiver asks and we aren't actively sending chunks, resend it!
           if (!isTransferring) sendInitialData();
         }
         else if (data.type === 'ready' && payload.type === 'files') {
@@ -369,18 +370,17 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
         } 
         else if (data.type === 'done' && payload.type === 'files') {
           currentIndex++; 
-          isTransferring = false; // Reset for the next file
+          isTransferring = false; 
           sendInitialData();
         }
       });
       
-      // Use functional state update to avoid stale state closures
       conn.on('close', () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); });
     });
     peer.on('error', (err) => { console.error(err); setStatus('error'); });
     
     return () => peer.destroy();
-  }, [payload, updateSpeed, resetSpeed]); // <-- status is cleanly removed from here
+  }, [payload, updateSpeed, resetSpeed]); 
 
   const handleCopy = () => { copyToClipboard(shareUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
@@ -471,8 +471,7 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
     const peer = new Peer({
       config: {
         iceServers: [
-          {
-            urls: "stun:free.expressturn.com:3478" },
+          { urls: "stun:free.expressturn.com:3478" },
           { urls: "stun:stun.relay.metered.ca:80" },
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun.cloudflare.com:3478" },
@@ -492,14 +491,17 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
     let handshakeInterval: any;
 
     peer.on('open', () => {
-      const conn = peer.connect(senderId, { reliable: true });
-      let chunks: Blob[] = []; let receivedSize = 0; let fileMeta: any = null;
+      // 🔥 Add serialization: 'binary' here
+      const conn = peer.connect(senderId, { reliable: true, serialization: 'binary' });
+      let chunks: any[] = []; 
+      let receivedSize = 0; 
+      let fileMeta: any = null;
+      let lastUiUpdate = 0; // 🔥 Added UI Throttle tracker
 
       conn.on('open', () => {
         setStatus('connecting');
         conn.send({ type: 'request_metadata' });
         
-        // Retry loop: keep knocking until the sender answers
         handshakeInterval = setInterval(() => {
           if (conn.open) {
             conn.send({ type: 'request_metadata' });
@@ -508,7 +510,22 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
       });
 
       conn.on('data', (data: any) => {
-        // Stop knocking once we get a response
+        
+        // 🔥 Lightning Fast Catch for RAW ArrayBuffers!
+        if (data instanceof ArrayBuffer) {
+          chunks.push(data); 
+          receivedSize += data.byteLength;
+          
+          // 🔥 UI Throttle for Receiver (Updates every 1MB)
+          if (receivedSize - lastUiUpdate > 1024 * 1024 || receivedSize >= fileMeta.size) {
+             setProgress((receivedSize / fileMeta.size) * 100);
+             lastUiUpdate = receivedSize;
+          }
+          updateSpeed(receivedSize, fileMeta.size);
+          return;
+        }
+
+        // --- Handle JSON Objects for Control Messages ---
         if (data.type === 'metadata' || data.type === 'text_message') {
           if (handshakeInterval) clearInterval(handshakeInterval);
         }
@@ -518,18 +535,12 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
           setStatus('complete');
         }
         else if (data.type === 'metadata') {
-          fileMeta = data; setMetadata(data); chunks = []; receivedSize = 0; setProgress(0); setStatus('receiving'); 
+          fileMeta = data; setMetadata(data); chunks = []; receivedSize = 0; lastUiUpdate = 0; setProgress(0); setStatus('receiving'); 
           resetSpeed(); 
           conn.send({ type: 'ready' }); 
         } 
-        else if (data.type === 'chunk') {
-          chunks.push(new Blob([data.data])); receivedSize += data.data.byteLength;
-          if (fileMeta) {
-            setProgress((receivedSize / fileMeta.size) * 100);
-            updateSpeed(receivedSize, fileMeta.size); 
-          }
-        } 
         else if (data.type === 'eof') {
+          // Compile all ArrayBuffers into a single file Blob at the very end
           const finalBlob = new Blob(chunks, { type: fileMeta.mime });
           const url = URL.createObjectURL(finalBlob);
           activeUrls.push(url); 
@@ -550,7 +561,7 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
       activeUrls.forEach(url => URL.revokeObjectURL(url)); 
       peer.destroy(); 
     };
-  }, [senderId, resetSpeed, updateSpeed]); // <-- status is cleanly removed from here 
+  }, [senderId, resetSpeed, updateSpeed]); 
 
   const handleCopyText = () => {
     if (receivedText) {
@@ -692,7 +703,6 @@ const Footer = ({ onOpenPrivacy, onOpenTerms }: { onOpenPrivacy: () => void, onO
         <div>
           <h3 className="font-bold text-[#3C1F00] dark:text-white mb-5 transition-colors uppercase tracking-wider text-sm">Legal</h3>
           <ul className="space-y-3 sm:space-y-4">
-            {/* UPDATED LEGAL BUTTONS */}
             <li><button onClick={onOpenPrivacy} className="text-[#7B3F00]/80 hover:text-[#7B3F00] dark:text-[#d4a373]/80 dark:hover:text-[#e5b342] transition-colors font-medium">Privacy Policy</button></li>
             <li><button onClick={onOpenTerms} className="text-[#7B3F00]/80 hover:text-[#7B3F00] dark:text-[#d4a373]/80 dark:hover:text-[#e5b342] transition-colors font-medium">Terms of Service</button></li>
           </ul>
