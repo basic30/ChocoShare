@@ -511,14 +511,17 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
 
       conn.on('data', (data: any) => {
         
-        // 🔥 Lightning Fast Catch for RAW ArrayBuffers!
-        if (data instanceof ArrayBuffer) {
+        // 🔥 THE BULLETPROOF CHECK: If it doesn't have a 'type' property, it is our raw file chunk!
+        if (!data.type) {
           chunks.push(data); 
-          receivedSize += data.byteLength;
           
-          // 🔥 UI Throttle for Receiver (Updates every 1MB)
+          // Safely get the size no matter what weird binary format the browser uses
+          const chunkSize = data.byteLength || data.size || data.length || 0;
+          receivedSize += chunkSize;
+          
+          // 🔥 UI Throttle for Receiver (Updates every 1MB to prevent lag)
           if (receivedSize - lastUiUpdate > 1024 * 1024 || receivedSize >= fileMeta.size) {
-             setProgress((receivedSize / fileMeta.size) * 100);
+             setProgress(Math.min(100, (receivedSize / fileMeta.size) * 100));
              lastUiUpdate = receivedSize;
           }
           updateSpeed(receivedSize, fileMeta.size);
@@ -539,8 +542,16 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
           resetSpeed(); 
           conn.send({ type: 'ready' }); 
         } 
+        else if (data.type === 'chunk') {
+           // Fallback just in case older devices send the chunk wrapped in an object
+           chunks.push(new Blob([data.data])); receivedSize += data.data.byteLength;
+           if (fileMeta) {
+             setProgress((receivedSize / fileMeta.size) * 100);
+             updateSpeed(receivedSize, fileMeta.size); 
+           }
+        }
         else if (data.type === 'eof') {
-          // Compile all ArrayBuffers into a single file Blob at the very end
+          // Compile all chunks into a single file Blob at the very end
           const finalBlob = new Blob(chunks, { type: fileMeta.mime });
           const url = URL.createObjectURL(finalBlob);
           activeUrls.push(url); 
