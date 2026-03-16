@@ -285,12 +285,12 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun.cloudflare.com:3478" },
           {
-            urls: "turn:free.expressturn.com:3478?transport=tcp",
+            urls: "turn:free.expressturn.com:3478",
             username: "000000002088860057",
             credential: "I+TSjeTYD3+Jd/eANOhkPvvTh8k="
           },
           {
-            urls: "turn:free.expressturn.com:3478?transport=tcp",
+            urls: "turn:free.expressturn.com:3478",
             username: "000000002088916220",
             credential: "nhYjASv8X4q9sOPjsK1VyVxn32c="
           }
@@ -324,24 +324,35 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
       if (conn.open) sendInitialData();
       else conn.on('open', () => sendInitialData());
 
-      const CHUNK_SIZE = 128 * 1024; 
-      const sendNextChunk = (file: File, offset: number) => {
-        if (offset >= file.size) { conn.send({ type: 'eof' }); return; }
-        if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024 * 8) {
-          setTimeout(() => sendNextChunk(file, offset), 50); return;
-        }
-        const slice = file.slice(offset, offset + CHUNK_SIZE);
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          if (e.target?.result) {
-            conn.send({ type: 'chunk', data: e.target.result });
-            const newOffset = offset + CHUNK_SIZE;
-            setProgress(Math.min(100, (newOffset / file.size) * 100));
-            updateSpeed(newOffset, file.size);
-            setTimeout(() => sendNextChunk(file, newOffset), 0); 
+      const CHUNK_SIZE = 128 * 1024;  
+      const sendNextChunk = async (file: File, startOffset: number) => {
+        let offset = startOffset;  
+        // 🔥 We use a while loop to blast chunks instantly instead of slow setTimeouts
+        while (offset < file.size) {
+          // If the buffer gets too full, pause for 50ms to let the network catch up
+          if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024 * 8) {
+            setTimeout(() => sendNextChunk(file, offset), 50);
+            return; 
           }
-        };
-        reader.readAsArrayBuffer(slice);
+
+          const slice = file.slice(offset, offset + CHUNK_SIZE);
+          
+          // 🔥 Modern, lightning-fast ArrayBuffer (Replaces the slow FileReader)
+          const buffer = await slice.arrayBuffer(); 
+          
+          conn.send({ type: 'chunk', data: buffer });
+          offset += CHUNK_SIZE;
+          
+          // 🔥 UI Throttle: Only update the progress bar 5% of the time, or at the very end.
+          // This prevents React from lagging and freezing the browser!
+          if (Math.random() < 0.05 || offset >= file.size) {
+             setProgress(Math.min(100, (offset / file.size) * 100));
+          }
+          updateSpeed(offset, file.size);
+        }
+        
+        // Once the loop finishes, tell the receiver we are done
+        conn.send({ type: 'eof' });
       };
 
       conn.on('data', (data: any) => {
@@ -466,12 +477,12 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun.cloudflare.com:3478" },
           {
-            urls: "turn:free.expressturn.com:3478?transport=tcp",
+            urls: "turn:free.expressturn.com:3478",
             username: "000000002088860057",
             credential: "I+TSjeTYD3+Jd/eANOhkPvvTh8k="
           },
           {
-            urls: "turn:free.expressturn.com:3478?transport=tcp",
+            urls: "turn:free.expressturn.com:3478",
             username: "000000002088916220",
             credential: "nhYjASv8X4q9sOPjsK1VyVxn32c="
           }
