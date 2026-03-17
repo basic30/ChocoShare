@@ -119,8 +119,13 @@ const ReceiveModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!code.trim()) return;
-    let peerId = code.trim();
-    if (peerId.includes('#/receive/')) peerId = peerId.split('#/receive/')[1];
+    
+    // 🔥 FIX 1: Convert to uppercase secretly behind the scenes when submitting!
+    let peerId = code.trim().toUpperCase();
+    
+    // Safety check just in case they pasted a full URL
+    if (peerId.includes('#/RECEIVE/')) peerId = peerId.split('#/RECEIVE/')[1];
+    
     window.location.hash = `#/receive/${peerId}`;
     onClose(); setCode('');
   };
@@ -135,8 +140,17 @@ const ReceiveModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
         <div className="p-8">
           <p className="text-[#7B3F00] dark:text-[#d4a373] mb-6 font-medium transition-colors">Enter the secure code or paste the full link shared by the sender below.</p>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {/* 🔥 onChange ensures uppercase typing instantly! */}
-            <input type="text" placeholder="e.g. A7X9P2" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} className="w-full px-4 py-4 rounded-xl border-2 border-[#C68E17]/30 dark:border-[#e5b342]/30 bg-transparent dark:text-white focus:border-[#7B3F00] dark:focus:border-[#e5b342] focus:ring-2 focus:ring-[#7B3F00]/20 outline-none transition-all text-[#3C1F00] font-bold text-center text-xl tracking-widest" autoFocus />
+            
+            {/* 🔥 FIX 2: Removed .toUpperCase() from onChange, and added 'uppercase' to the end of the className */}
+            <input 
+              type="text" 
+              placeholder="e.g. A7X9P2" 
+              value={code} 
+              onChange={(e) => setCode(e.target.value)} 
+              className="w-full px-4 py-4 rounded-xl border-2 border-[#C68E17]/30 dark:border-[#e5b342]/30 bg-transparent dark:text-white focus:border-[#7B3F00] dark:focus:border-[#e5b342] focus:ring-2 focus:ring-[#7B3F00]/20 outline-none transition-all text-[#3C1F00] font-bold text-center text-xl tracking-widest uppercase" 
+              autoFocus 
+            />
+            
             <button type="submit" disabled={!code.trim()} className="w-full py-4 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] dark:hover:bg-[#c28415] disabled:opacity-50 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
               Connect & Receive <ArrowRight className="w-5 h-5" />
             </button>
