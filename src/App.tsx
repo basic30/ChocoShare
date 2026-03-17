@@ -133,9 +133,10 @@ const ReceiveModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
           <button onClick={onClose} className="hover:bg-white/20 p-1 rounded-full transition-colors"><X className="w-6 h-6" /></button>
         </div>
         <div className="p-8">
-          <p className="text-[#7B3F00] dark:text-[#d4a373] mb-6 font-medium transition-colors">Enter the 6-digit code or paste the full link shared by the sender below.</p>
+          <p className="text-[#7B3F00] dark:text-[#d4a373] mb-6 font-medium transition-colors">Enter the secure code or paste the full link shared by the sender below.</p>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <input type="text" placeholder="e.g. 123456" value={code} onChange={(e) => setCode(e.target.value)} className="w-full px-4 py-4 rounded-xl border-2 border-[#C68E17]/30 dark:border-[#e5b342]/30 bg-transparent dark:text-white focus:border-[#7B3F00] dark:focus:border-[#e5b342] focus:ring-2 focus:ring-[#7B3F00]/20 outline-none transition-all text-[#3C1F00] font-bold text-center text-xl tracking-widest" autoFocus />
+            {/* 🔥 onChange ensures uppercase typing instantly! */}
+            <input type="text" placeholder="e.g. A7X9P2" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} className="w-full px-4 py-4 rounded-xl border-2 border-[#C68E17]/30 dark:border-[#e5b342]/30 bg-transparent dark:text-white focus:border-[#7B3F00] dark:focus:border-[#e5b342] focus:ring-2 focus:ring-[#7B3F00]/20 outline-none transition-all text-[#3C1F00] font-bold text-center text-xl tracking-widest" autoFocus />
             <button type="submit" disabled={!code.trim()} className="w-full py-4 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] dark:hover:bg-[#c28415] disabled:opacity-50 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
               Connect & Receive <ArrowRight className="w-5 h-5" />
             </button>
@@ -262,20 +263,107 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
   );
 };
 
-const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () => void }) => {
-  const [peerId, setPeerId] = useState<string | null>(null);
-  const [status, setStatus] = useState<string>('initializing'); 
+// --- INDIVIDUAL TRANSFER TASK (For 1-to-Many Sharing) ---
+const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: SharePayload }) => {
+  const [status, setStatus] = useState<string>('connecting'); 
   const [progress, setProgress] = useState<number>(0);
-  const [copied, setCopied] = useState<boolean>(false);
   const [fileProgress, setFileProgress] = useState({ current: 0, total: payload.type === 'files' ? payload.data.length : 1 });
   const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed();
+
+  useEffect(() => {
+    let currentIndex = 0;
+    let isTransferring = false; 
+    let lastUiUpdate = 0;
+
+    const sendInitialData = () => {
+      if (payload.type === 'text') {
+        conn.send({ type: 'text_message', data: payload.data });
+        setStatus('complete');
+      } else {
+        const files = payload.data;
+        if (currentIndex >= files.length) {
+          setStatus('complete'); conn.send({ type: 'all_done' }); return;
+        }
+        const file = files[currentIndex];
+        setFileProgress({ current: currentIndex + 1, total: files.length });
+        resetSpeed(); 
+        lastUiUpdate = 0; 
+        conn.send({ type: 'metadata', name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
+      }
+    };
+    
+    if (conn.open) sendInitialData();
+    else conn.on('open', () => sendInitialData());
+
+    const CHUNK_SIZE = 256 * 1024; 
+    
+    const sendNextChunk = async (file: File, offset: number) => {
+      if (offset >= file.size) { conn.send({ type: 'eof' }); return; }
+      
+      if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024 * 16) {
+        setTimeout(() => sendNextChunk(file, offset), 5); return; 
+      }
+
+      const slice = file.slice(offset, offset + CHUNK_SIZE);
+      const buffer = await slice.arrayBuffer(); 
+      
+      conn.send(buffer);
+      const newOffset = offset + CHUNK_SIZE;
+      
+      if (newOffset - lastUiUpdate > 1024 * 1024 || newOffset >= file.size) {
+         setProgress(Math.min(100, (newOffset / file.size) * 100));
+         lastUiUpdate = newOffset;
+      }
+      updateSpeed(newOffset, file.size);
+      setTimeout(() => sendNextChunk(file, newOffset), 0); 
+    };
+
+    conn.on('data', (data: any) => {
+      if (data.type === 'request_metadata') {
+        if (!isTransferring) sendInitialData();
+      }
+      else if (data.type === 'ready' && payload.type === 'files') {
+        if (!isTransferring) {
+          isTransferring = true; setStatus('transferring'); sendNextChunk(payload.data[currentIndex], 0); 
+        }
+      } 
+      else if (data.type === 'done' && payload.type === 'files') {
+        currentIndex++; isTransferring = false; sendInitialData();
+      }
+    });
+    
+    conn.on('close', () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); });
+  }, [conn, payload, resetSpeed, updateSpeed]); 
+
+  return (
+    <div className="w-full bg-[#FFFDD0]/60 dark:bg-[#1a0b00]/60 p-4 rounded-xl border border-[#7B3F00]/20 dark:border-[#d4a373]/20 mb-3 shadow-sm transition-colors">
+      <div className="flex justify-between items-center mb-1">
+        <span className="font-bold text-[#3C1F00] dark:text-white text-sm flex items-center gap-2">
+          {status === 'complete' ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : status === 'error' ? <X className="w-4 h-4 text-red-500" /> : <Loader2 className="w-4 h-4 animate-spin text-[#C68E17]" />}
+          Guest: {conn.peer.substring(0, 6).toUpperCase()}
+        </span>
+        <span className={`text-xs font-bold uppercase tracking-wider ${status === 'complete' ? 'text-green-600' : status === 'error' ? 'text-red-500' : 'text-[#7B3F00]/70 dark:text-[#d4a373]/70'}`}>
+          {status}
+        </span>
+      </div>
+      {status === 'transferring' && <ProgressBar progress={progress} statusText={`File ${fileProgress.current}/${fileProgress.total}`} speed={speed} eta={eta} />}
+    </div>
+  );
+};
+
+// --- SENDER VIEW (The Room) ---
+const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () => void }) => {
+  const [peerId, setPeerId] = useState<string | null>(null);
+  const [receivers, setReceivers] = useState<DataConnection[]>([]);
+  const [copied, setCopied] = useState<boolean>(false);
   
   const peerRef = useRef<Peer | null>(null);
-  const connectionRef = useRef<DataConnection | null>(null);
   const shareUrl = peerId ? `${window.location.origin}${window.location.pathname}#/receive/${peerId}` : '';
 
   useEffect(() => {
-    const id = Math.floor(100000 + Math.random() * 900000).toString();
+    // 🔥 Generates a highly secure 6-character Alphanumeric code (e.g., A7X9P2)
+    const id = Math.random().toString(36).substring(2, 8).toUpperCase();
+    
     const peer = new Peer(id, {
       config: {
         iceServers: [
@@ -298,114 +386,35 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
     });
     peerRef.current = peer;
 
-    peer.on('open', (id) => { setPeerId(id); setStatus('waiting'); });
-    peer.on('connection', (conn) => {
-      connectionRef.current = conn;
-      let currentIndex = 0;
-      let isTransferring = false; 
-      let lastUiUpdate = 0; // 🔥 Variable to throttle UI updates based on data processed
-
-      const sendInitialData = () => {
-        if (payload.type === 'text') {
-          conn.send({ type: 'text_message', data: payload.data });
-          setStatus('complete');
-        } else {
-          const files = payload.data;
-          if (currentIndex >= files.length) {
-            setStatus('complete'); conn.send({ type: 'all_done' }); return;
-          }
-          const file = files[currentIndex];
-          setFileProgress({ current: currentIndex + 1, total: files.length });
-          resetSpeed(); 
-          lastUiUpdate = 0; // Reset for new file
-          conn.send({ type: 'metadata', name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
-        }
-      };
-      
-      if (conn.open) sendInitialData();
-      else conn.on('open', () => sendInitialData());
-
-      const CHUNK_SIZE = 256 * 1024; // 🔥 256KB - Safe universal maximum
-      
-      const sendNextChunk = async (file: File, offset: number) => {
-        if (offset >= file.size) { 
-          conn.send({ type: 'eof' }); 
-          return; 
-        }
-        
-        // 🔥 16MB backpressure buffer
-        if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024 * 16) {
-          setTimeout(() => sendNextChunk(file, offset), 5);
-          return; 
-        }
-
-        const slice = file.slice(offset, offset + CHUNK_SIZE);
-        const buffer = await slice.arrayBuffer(); 
-        
-        // 🔥 Send raw buffer instead of JSON object!
-        conn.send(buffer);
-        const newOffset = offset + CHUNK_SIZE;
-        
-        // 🔥 UI Throttle: Only trigger React update every 1 Megabyte
-        if (newOffset - lastUiUpdate > 1024 * 1024 || newOffset >= file.size) {
-           setProgress(Math.min(100, (newOffset / file.size) * 100));
-           lastUiUpdate = newOffset;
-        }
-        updateSpeed(newOffset, file.size);
-        
-        // Yield to the event loop safely
-        setTimeout(() => sendNextChunk(file, newOffset), 0); 
-      };
-
-      conn.on('data', (data: any) => {
-        if (data.type === 'request_metadata') {
-          if (!isTransferring) sendInitialData();
-        }
-        else if (data.type === 'ready' && payload.type === 'files') {
-          if (!isTransferring) {
-            isTransferring = true;
-            setStatus('transferring'); 
-            sendNextChunk(payload.data[currentIndex], 0); 
-          }
-        } 
-        else if (data.type === 'done' && payload.type === 'files') {
-          currentIndex++; 
-          isTransferring = false; 
-          sendInitialData();
-        }
-      });
-      
-      conn.on('close', () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); });
-    });
-    peer.on('error', (err) => { console.error(err); setStatus('error'); });
+    peer.on('open', (id) => setPeerId(id));
     
+    // 🔥 1-to-Many Magic: Every time a new person connects, add them to the list!
+    peer.on('connection', (conn) => {
+      // Must use reliable:true and binary serialization for high-speed buffers
+      conn.serialization = 'binary';
+      setReceivers(prev => [...prev, conn]);
+    });
+    
+    peer.on('error', (err) => console.error(err));
     return () => peer.destroy();
-  }, [payload, updateSpeed, resetSpeed]); 
+  }, []); 
 
   const handleCopy = () => { copyToClipboard(shareUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
   return (
     <motion.div initial={{ opacity: 0, scale: 0.9, y: 30 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", bounce: 0.4 }} className="w-full max-w-[500px] mx-auto bg-white/95 dark:bg-[#2d1a0a]/95 backdrop-blur-md rounded-3xl shadow-2xl border border-[#7B3F00]/10 dark:border-[#d4a373]/10 overflow-hidden transition-colors">
-      <div className={`p-4 text-center text-white font-bold flex items-center justify-center gap-2 ${ status === 'waiting' ? 'bg-[#C68E17] dark:bg-[#e5b342]' : status === 'transferring' ? 'bg-blue-500' : status === 'complete' ? 'bg-green-500' : 'bg-red-500' }`}>
-        {status === 'initializing' && <><Loader2 className="animate-spin" /> Generating Secure Link...</>}
-        {status === 'waiting' && <><div className="w-3 h-3 bg-white rounded-full animate-pulse" /> Ready to Share</>}
-        {status === 'transferring' && <><Loader2 className="animate-spin" /> Sending...</>}
-        {status === 'complete' && <><CheckCircle2 /> Transfer Complete!</>}
-        {status === 'error' && <><X /> Connection Lost</>}
+      <div className="p-4 text-center text-white font-bold flex items-center justify-center gap-2 bg-[#C68E17] dark:bg-[#e5b342]">
+        {!peerId ? <><Loader2 className="animate-spin" /> Securing Room...</> : <><div className="w-3 h-3 bg-white rounded-full animate-pulse" /> Room Open - Waiting for Guests</>}
       </div>
 
       <div className="p-8 flex flex-col items-center">
         <div className="flex items-center gap-3 w-full bg-[#FFFDD0]/50 dark:bg-[#1a0b00]/50 p-4 rounded-xl mb-6 border border-[#7B3F00]/20 dark:border-[#d4a373]/20 transition-colors">
-          {payload.type === 'files' ? (
-             <FileBox className="text-[#7B3F00] dark:text-[#e5b342] w-8 h-8 flex-shrink-0" />
-          ) : (
-             <MessageSquare className="text-[#7B3F00] dark:text-[#e5b342] w-8 h-8 flex-shrink-0" />
-          )}
+          {payload.type === 'files' ? ( <FileBox className="text-[#7B3F00] dark:text-[#e5b342] w-8 h-8 flex-shrink-0" /> ) : ( <MessageSquare className="text-[#7B3F00] dark:text-[#e5b342] w-8 h-8 flex-shrink-0" /> )}
           <div className="overflow-hidden">
             {payload.type === 'files' ? (
               <>
-                <p className="font-bold text-[#3C1F00] dark:text-white truncate">{payload.data[fileProgress.current - 1]?.name || payload.data[0].name}</p>
-                <p className="text-sm text-[#7B3F00] dark:text-[#d4a373]">{payload.data.length > 1 ? `File ${fileProgress.current} of ${payload.data.length} • ` : ''}{formatBytes(payload.data[fileProgress.current - 1]?.size || payload.data[0].size)}</p>
+                <p className="font-bold text-[#3C1F00] dark:text-white truncate">{payload.data.length} File{payload.data.length > 1 ? 's' : ''} Ready</p>
+                <p className="text-sm text-[#7B3F00] dark:text-[#d4a373]">{formatBytes(payload.data.reduce((acc, file) => acc + file.size, 0))}</p>
               </>
             ) : (
               <>
@@ -416,7 +425,7 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
           </div>
         </div>
 
-        {status === 'waiting' && shareUrl && (
+        {peerId && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center w-full">
             <div className="flex flex-col sm:flex-row items-center gap-4 w-full mb-6">
                 <div className="bg-white p-3 rounded-2xl border-4 border-[#C68E17] dark:border-[#e5b342] shadow-lg shrink-0 hover:scale-105 transition-transform">
@@ -429,30 +438,29 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
                   <p className="text-[#7B3F00]/70 dark:text-[#d4a373]/70 text-[10px] mt-2 font-medium">Scan QR or enter code</p>
                 </div>
             </div>
-            <div className="w-full flex gap-3 mb-2">
+            
+            <div className="w-full flex gap-3 mb-6">
               <button onClick={handleCopy} className="flex-1 bg-white dark:bg-[#1a0b00] border-2 border-[#7B3F00]/20 dark:border-[#d4a373]/20 hover:border-[#7B3F00] dark:hover:border-[#e5b342] text-[#7B3F00] dark:text-[#e5b342] p-3 rounded-xl transition-all flex items-center justify-center gap-2 text-sm font-bold shadow-sm">
                 {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />} {copied ? "Copied Link" : "Copy Link"}
               </button>
             </div>
+
+            {/* --- LIST OF ACTIVE GUESTS --- */}
+            <div className="w-full">
+              {receivers.length > 0 && <p className="text-sm font-bold text-[#7B3F00] dark:text-[#d4a373] mb-2 uppercase tracking-wider text-left">Active Transfers ({receivers.length})</p>}
+              <AnimatePresence>
+                {receivers.map((conn, index) => (
+                  <motion.div key={index} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                    <TransferTask conn={conn} payload={payload} />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+
           </motion.div>
         )}
 
-        {status === 'transferring' && <ProgressBar progress={progress} statusText={`Sending...`} speed={speed} eta={eta} />}
-        {status === 'complete' && (
-          <div className="text-center w-full py-8">
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.6 }} className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-10 h-10 text-green-600" />
-            </motion.div>
-            <p className="font-bold text-[#3C1F00] dark:text-white text-xl">Successfully Sent!</p>
-          </div>
-        )}
-
-        {(status === 'error' || status === 'complete') && (
-          <button onClick={onCancel} className="mt-6 w-full py-3 font-bold bg-[#FFFDD0] dark:bg-[#1a0b00] text-[#7B3F00] dark:text-[#e5b342] border border-[#7B3F00]/20 dark:border-[#d4a373]/20 hover:bg-[#C68E17] dark:hover:bg-[#e5b342] hover:text-white dark:hover:text-[#1a0b00] rounded-xl transition-all">Share More Data</button>
-        )}
-        {status === 'waiting' && (
-          <button onClick={onCancel} className="mt-4 text-sm text-[#7B3F00]/70 dark:text-[#d4a373]/70 hover:text-red-500 font-semibold underline-offset-2 hover:underline">Cancel Transfer</button>
-        )}
+        <button onClick={onCancel} className="mt-4 text-sm text-[#7B3F00]/70 dark:text-[#d4a373]/70 hover:text-red-500 font-semibold underline-offset-2 hover:underline">Close Room & Stop Sharing</button>
       </div>
     </motion.div>
   );
@@ -768,7 +776,8 @@ export default function App() {
     const handleHashChange = () => {
       const hash = window.location.hash;
       if (hash.startsWith('#/receive/')) {
-        const id = hash.replace('#/receive/', '');
+        // 🔥 Automatically force the URL to uppercase to prevent case sensitivity issues!
+        const id = hash.replace('#/receive/', '').toUpperCase();
         setReceiverId(id); setRoute('receive');
       } else if (payloadToShare !== null) {
         setRoute('send');
