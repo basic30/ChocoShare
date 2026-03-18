@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Peer, DataConnection } from 'peerjs';
 import { 
   UploadCloud, Copy, CheckCircle2, AlertCircle, Loader2, Download, 
-  Wifi, FileBox, X, Share2, QrCode, Lock, Zap, Infinity, ArrowRight, Moon, Sun, Type, FileUp, MessageSquare, Instagram, Github, Info, Heart, Mail
+  Wifi, FileBox, X, Share2, QrCode, Lock, Zap, Infinity, ArrowRight, Moon, Sun, Type, FileUp, MessageSquare, Instagram, Github, Info, Heart, Mail, Wrench
 } from 'lucide-react';
 
 // --- TYPES ---
@@ -169,6 +169,37 @@ const FeatureCard = ({ icon, title, desc }: { icon: React.ReactNode, title: stri
     <h3 className="text-xl font-extrabold text-[#3C1F00] dark:text-white mb-3 transition-colors">{title}</h3>
     <p className="text-[#7B3F00]/80 dark:text-[#d4a373]/80 font-medium leading-relaxed transition-colors">{desc}</p>
   </motion.div>
+);
+
+const MaintenanceView = () => (
+  <div className="min-h-screen bg-[#FFFDD0] dark:bg-[#110800] text-[#3C1F00] dark:text-white flex flex-col items-center justify-center p-6 relative overflow-hidden transition-colors">
+    <BackgroundShapes />
+    <ChocolateHeader />
+    
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      className="max-w-lg w-full bg-white/90 dark:bg-[#2d1a0a]/90 backdrop-blur-md rounded-3xl shadow-2xl border border-[#7B3F00]/10 dark:border-[#d4a373]/10 p-10 text-center relative z-10"
+    >
+      <motion.div 
+        animate={{ rotate: [0, -10, 10, -10, 0] }} 
+        transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+        className="w-20 h-20 bg-[#FFFDD0] dark:bg-[#1a0b00] rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner border border-[#C68E17]/30 dark:border-[#e5b342]/30"
+      >
+        <Wrench className="w-10 h-10 text-[#7B3F00] dark:text-[#e5b342]" />
+      </motion.div>
+      
+      <h1 className="text-3xl font-black mb-4 text-[#3C1F00] dark:text-white tracking-tight">We're upgrading the machinery.</h1>
+      <p className="text-[#7B3F00]/80 dark:text-[#d4a373]/80 font-medium mb-8 leading-relaxed">
+        ChocoShare is currently undergoing scheduled maintenance to improve speed and security. We'll be back online shortly. Grab a coffee and check back in a few minutes!
+      </p>
+      
+      <div className="inline-flex items-center justify-center gap-2 bg-[#FFFDD0]/50 dark:bg-[#1a0b00]/50 px-6 py-3 rounded-full border border-[#7B3F00]/20 dark:border-[#d4a373]/20">
+        <div className="w-2 h-2 bg-[#C68E17] dark:bg-[#e5b342] rounded-full animate-ping"></div>
+        <span className="text-sm font-bold text-[#7B3F00] dark:text-[#d4a373] uppercase tracking-wider">System Status: Maintenance</span>
+      </div>
+    </motion.div>
+  </div>
 );
 
 const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => {
@@ -753,6 +784,10 @@ const Footer = ({ onOpenPrivacy, onOpenTerms }: { onOpenPrivacy: () => void, onO
 );
 
 export default function App() {
+  const isMaintenanceMode = import.meta.env.VITE_MAINTENANCE_MODE === 'true';
+  if (isMaintenanceMode) {
+    return <MaintenanceView />;
+  }
   const [route, setRoute] = useState<string>('home'); 
   const [payloadToShare, setPayloadToShare] = useState<SharePayload | null>(null);
   const [receiverId, setReceiverId] = useState<string | null>(null);
