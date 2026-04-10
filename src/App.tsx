@@ -934,7 +934,7 @@ export default function App() {
           )}
           {route === 'receive' && receiverId && (
             <div className="w-full mt-8 sm:mt-16 mb-20 flex justify-center">
-               <ReceiverView key="receive" senderId={receiverId} />
+               <ReceiverView key={`receive-${receiverId}`} senderId={receiverId} />
             </div>
           )}
         </AnimatePresence>
