@@ -5,12 +5,11 @@ import {
   UploadCloud, Copy, CheckCircle2, AlertCircle, Loader2, Download, 
   Wifi, FileBox, X, Share2, QrCode, Lock, Zap, Infinity, ArrowRight, 
   Moon, Sun, Type, FileUp, MessageSquare, Instagram, Github, Info, Heart, Mail, Wrench,
-  Clock, Save, Smartphone, RotateCw
+  RotateCw, Save, Smartphone
 } from 'lucide-react';
 
 // --- TYPES ---
 type SharePayload = { type: 'files'; data: File[] } | { type: 'text'; data: string };
-type TransferRecord = { id: string; name: string; size: number; type: 'sent' | 'received'; status: 'completed' | 'failed'; timestamp: number };
 type TrustedDevice = { peerId: string; name: string; addedAt: number };
 
 const copyToClipboard = async (text: string) => {
@@ -65,35 +64,26 @@ const useTransferSpeed = () => {
   return { speed, eta, updateSpeed, resetSpeed };
 };
 
-const useAppStorage = () => {
-  const [history, setHistory] = useState<TransferRecord[]>([]);
+// --- TRUSTED DEVICES STORAGE HOOK ---
+const useTrustedDevices = () => {
   const [trustedDevices, setTrustedDevices] = useState<TrustedDevice[]>([]);
 
   useEffect(() => {
-    const storedHistory = localStorage.getItem('chocoshare_history');
     const storedTrusted = localStorage.getItem('chocoshare_trusted');
-    if (storedHistory) setHistory(JSON.parse(storedHistory));
     if (storedTrusted) setTrustedDevices(JSON.parse(storedTrusted));
   }, []);
-
-  const addHistory = (record: Omit<TransferRecord, 'id' | 'timestamp'>) => {
-    const newRecord = { ...record, id: Math.random().toString(36).substring(2, 9), timestamp: Date.now() };
-    setHistory(prev => { const updated = [newRecord, ...prev].slice(0, 10); localStorage.setItem('chocoshare_history', JSON.stringify(updated)); return updated; });
-  };
 
   const addTrustedDevice = (peerId: string, name: string) => {
     if (trustedDevices.some(d => d.peerId === peerId)) return;
     const newDevice = { peerId, name, addedAt: Date.now() };
-    setTrustedDevices(prev => { const updated = [...prev, newDevice]; localStorage.setItem('chocoshare_trusted', JSON.stringify(updated)); return updated; });
+    setTrustedDevices(prev => { 
+      const updated = [...prev, newDevice]; 
+      localStorage.setItem('chocoshare_trusted', JSON.stringify(updated)); 
+      return updated; 
+    });
   };
 
-  const removeTrustedDevice = (peerId: string) => {
-    setTrustedDevices(prev => { const updated = prev.filter(d => d.peerId !== peerId); localStorage.setItem('chocoshare_trusted', JSON.stringify(updated)); return updated; });
-  };
-
-  const clearHistory = () => { setHistory([]); localStorage.removeItem('chocoshare_history'); };
-
-  return { history, addHistory, clearHistory, trustedDevices, addTrustedDevice, removeTrustedDevice };
+  return { trustedDevices, addTrustedDevice };
 };
 
 // --- PEER CONFIG ---
@@ -178,7 +168,7 @@ const ReceiveModal = ({ isOpen, onClose, trustedDevices }: { isOpen: boolean; on
         </div>
         <div className="p-8 overflow-y-auto">
           <p className="text-[#7B3F00] dark:text-[#d4a373] mb-6 font-medium transition-colors">Enter the secure code or paste the full link shared by the sender below.</p>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4 mb-6">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4 mb-2">
             <input 
               type="text" 
               placeholder="e.g. A7X9P2" 
@@ -192,9 +182,9 @@ const ReceiveModal = ({ isOpen, onClose, trustedDevices }: { isOpen: boolean; on
             </button>
           </form>
 
-          {/* Trusted Devices Quick Connect */}
+          {/* 🔥 TRUSTED DEVICES UI */}
           {trustedDevices.length > 0 && (
-            <div className="border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 pt-6">
+            <div className="border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 pt-6 mt-6">
               <p className="text-sm font-bold text-[#7B3F00]/70 dark:text-[#d4a373]/70 mb-3 uppercase tracking-wider">Trusted Devices</p>
               <div className="flex flex-wrap gap-2">
                 {trustedDevices.map((device) => (
@@ -253,7 +243,7 @@ const MaintenanceView = () => (
   </div>
 );
 
-const HomeView = ({ onShare, history, clearHistory }: { onShare: (payload: SharePayload) => void, history: TransferRecord[], clearHistory: () => void }) => {
+const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => {
   const [activeTab, setActiveTab] = useState<'files' | 'text'>('files');
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [textInput, setTextInput] = useState('');
@@ -342,34 +332,6 @@ const HomeView = ({ onShare, history, clearHistory }: { onShare: (payload: Share
         )}
       </motion.div>
 
-      {/* --- DASHBOARD: RECENT TRANSFERS --- */}
-      {history.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="w-full max-w-xl mx-auto mt-8 bg-white/60 dark:bg-[#2d1a0a]/60 backdrop-blur-md rounded-3xl border border-[#7B3F00]/10 dark:border-[#d4a373]/10 p-6 transition-colors">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-[#3C1F00] dark:text-white flex items-center gap-2"><Clock className="w-5 h-5 text-[#C68E17] dark:text-[#e5b342]" /> Recent Activity</h3>
-            <button onClick={clearHistory} className="text-xs font-bold text-[#7B3F00]/60 dark:text-[#d4a373]/60 hover:text-red-500 transition-colors uppercase tracking-wider">Clear</button>
-          </div>
-          <div className="space-y-3">
-            {history.map((record) => (
-              <div key={record.id} className="flex items-center justify-between bg-white dark:bg-[#1a0b00] p-3 rounded-xl border border-[#7B3F00]/10 dark:border-[#d4a373]/10 shadow-sm transition-colors">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${record.type === 'sent' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'}`}>
-                    {record.type === 'sent' ? <UploadCloud className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-                  </div>
-                  <div className="overflow-hidden">
-                    <p className="text-sm font-bold text-[#3C1F00] dark:text-white truncate">{record.name}</p>
-                    <p className="text-xs font-medium text-[#7B3F00]/70 dark:text-[#d4a373]/70">{formatBytes(record.size)} • {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                  </div>
-                </div>
-                <div className="shrink-0 ml-2">
-                  {record.status === 'completed' ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <X className="w-5 h-5 text-red-500" />}
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
       <motion.div id="how-it-works" initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.8 }} className="w-full max-w-6xl mx-auto mt-32 px-4 scroll-mt-28">
         <div className="text-center mb-16">
           <h2 className="text-4xl font-black text-[#3C1F00] dark:text-white mb-6 tracking-tight transition-colors">How ChocoShare Works ?</h2>
@@ -388,7 +350,7 @@ const HomeView = ({ onShare, history, clearHistory }: { onShare: (payload: Share
 };
 
 // --- INDIVIDUAL TRANSFER TASK (For 1-to-Many Sharing) ---
-const TransferTask = ({ conn, payload, addHistory }: { conn: DataConnection, payload: SharePayload, addHistory: any }) => {
+const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: SharePayload }) => {
   const [status, setStatus] = useState<string>('connecting'); 
   const [progress, setProgress] = useState<number>(0);
   const [fileProgress, setFileProgress] = useState({ current: 0, total: payload.type === 'files' ? payload.data.length : 1 });
@@ -403,7 +365,6 @@ const TransferTask = ({ conn, payload, addHistory }: { conn: DataConnection, pay
       if (payload.type === 'text') {
         conn.send({ type: 'text_message', data: payload.data });
         setStatus('complete');
-        addHistory({ name: 'Text Snippet', size: payload.data.length, type: 'sent', status: 'completed' });
       } else {
         const files = payload.data;
         if (currentIndex >= files.length) {
@@ -452,7 +413,7 @@ const TransferTask = ({ conn, payload, addHistory }: { conn: DataConnection, pay
           isTransferring = true; setStatus('transferring'); sendNextChunk(payload.data[currentIndex], 0); 
         }
       } 
-      // 🔥 RESUME LOGIC (Sender Side)
+      // RESUME LOGIC (Sender Side)
       else if (data.type === 'resume' && payload.type === 'files') {
         const file = payload.data[currentIndex];
         if (file && data.name === file.name) {
@@ -462,21 +423,12 @@ const TransferTask = ({ conn, payload, addHistory }: { conn: DataConnection, pay
         }
       }
       else if (data.type === 'done' && payload.type === 'files') {
-        addHistory({ name: payload.data[currentIndex].name, size: payload.data[currentIndex].size, type: 'sent', status: 'completed' });
         currentIndex++; isTransferring = false; sendInitialData();
       }
     });
     
-    conn.on('close', () => { 
-      setStatus(prev => {
-        if (prev !== 'complete') {
-          if (payload.type === 'files' && payload.data[currentIndex]) addHistory({ name: payload.data[currentIndex].name, size: payload.data[currentIndex].size, type: 'sent', status: 'failed' });
-          return 'error';
-        }
-        return prev;
-      }); 
-    });
-  }, [conn, payload, resetSpeed, updateSpeed, addHistory]); 
+    conn.on('close', () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); });
+  }, [conn, payload, resetSpeed, updateSpeed]); 
 
   return (
     <div className="w-full bg-[#FFFDD0]/60 dark:bg-[#1a0b00]/60 p-4 rounded-xl border border-[#7B3F00]/20 dark:border-[#d4a373]/20 mb-3 shadow-sm transition-colors">
@@ -495,7 +447,7 @@ const TransferTask = ({ conn, payload, addHistory }: { conn: DataConnection, pay
 };
 
 // --- SENDER VIEW (The Room) ---
-const SenderView = ({ payload, onCancel, addHistory }: { payload: SharePayload; onCancel: () => void; addHistory: any }) => {
+const SenderView = ({ payload, onCancel }: { payload: SharePayload; onCancel: () => void }) => {
   const [peerId, setPeerId] = useState<string | null>(null);
   const [receivers, setReceivers] = useState<DataConnection[]>([]);
   const [copied, setCopied] = useState<boolean>(false);
@@ -571,7 +523,7 @@ const SenderView = ({ payload, onCancel, addHistory }: { payload: SharePayload; 
               <AnimatePresence>
                 {receivers.map((conn, index) => (
                   <motion.div key={index} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-                    <TransferTask conn={conn} payload={payload} addHistory={addHistory} />
+                    <TransferTask conn={conn} payload={payload} />
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -585,13 +537,14 @@ const SenderView = ({ payload, onCancel, addHistory }: { payload: SharePayload; 
   );
 };
 
-const ReceiverView = ({ senderId, addHistory, addTrustedDevice, trustedDevices }: { senderId: string, addHistory: any, addTrustedDevice: any, trustedDevices: TrustedDevice[] }) => {
+const ReceiverView = ({ senderId, trustedDevices, addTrustedDevice }: { senderId: string, trustedDevices: TrustedDevice[], addTrustedDevice: (id: string, name: string) => void }) => {
   const [status, setStatus] = useState<string>('connecting'); 
   const [progress, setProgress] = useState<number>(0);
   const [metadata, setMetadata] = useState<any>(null);
   const [receivedText, setReceivedText] = useState<string | null>(null);
-  const [deviceName, setDeviceName] = useState('');
   const [copied, setCopied] = useState(false);
+  const [deviceName, setDeviceName] = useState('');
+  
   const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed(); 
   
   // Storage for Resumable Transfers
@@ -636,7 +589,6 @@ const ReceiverView = ({ senderId, addHistory, addTrustedDevice, trustedDevices }
 
         if (data.type === 'text_message') {
           setReceivedText(data.data); setStatus('complete');
-          addHistory({ name: 'Text Snippet', size: data.data.length, type: 'received', status: 'completed' });
         }
         else if (data.type === 'metadata') {
           setMetadata(data); chunksRef.current = []; receivedSizeRef.current = 0; lastUiUpdate = 0; setProgress(0); setStatus('receiving'); 
@@ -652,25 +604,18 @@ const ReceiverView = ({ senderId, addHistory, addTrustedDevice, trustedDevices }
           const a = document.createElement('a'); a.href = url; a.download = metadata.name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
           URL.revokeObjectURL(url);
           conn.send({ type: 'done' });
-          addHistory({ name: metadata.name, size: metadata.size, type: 'received', status: 'completed' });
         }
         else if (data.type === 'all_done') { setStatus('complete'); }
       });
       
       conn.on('close', () => { 
-        setStatus(prev => {
-          if (prev !== 'complete') {
-            if (metadata) addHistory({ name: metadata.name, size: metadata.size, type: 'received', status: 'failed' });
-            return 'error';
-          }
-          return prev;
-        }); 
+        setStatus(prev => prev !== 'complete' ? 'error' : prev); 
       });
     });
     
     peer.on('error', (err) => { console.error(err); setStatus('error'); });
     return () => { if (handshakeInterval) clearInterval(handshakeInterval); };
-  }, [senderId, metadata, updateSpeed, resetSpeed, addHistory]);
+  }, [senderId, metadata, updateSpeed, resetSpeed]);
 
   useEffect(() => {
     const cleanup = establishConnection(false);
@@ -684,7 +629,7 @@ const ReceiverView = ({ senderId, addHistory, addTrustedDevice, trustedDevices }
 
   const handleCopyText = () => {
     if (receivedText) { copyToClipboard(receivedText); setCopied(true); setTimeout(() => setCopied(false), 2000); }
-  }
+  };
 
   const handleSaveDevice = () => { if (deviceName.trim()) addTrustedDevice(senderId, deviceName.trim()); };
   const isTrusted = trustedDevices.some(d => d.peerId === senderId);
@@ -750,7 +695,7 @@ const ReceiverView = ({ senderId, addHistory, addTrustedDevice, trustedDevices }
               </button>
             ) : null}
 
-            <button onClick={() => window.location.hash = ''} className="bg-[#7B3F00] dark:bg-[#e5b342] hover:bg-[#3C1F00] dark:hover:bg-[#c28415] text-white dark:text-[#1a0b00] px-8 py-3 rounded-xl font-bold transition-all shadow-md w-full">
+            <button onClick={() => window.location.hash = ''} className="bg-[#FFFDD0] dark:bg-[#1a0b00] border-2 border-[#7B3F00]/20 dark:border-[#d4a373]/20 hover:border-[#7B3F00] dark:hover:border-[#e5b342] text-[#7B3F00] dark:text-[#e5b342] w-full py-3 rounded-xl font-bold transition-all shadow-sm">
               Go to Homepage
             </button>
           </div>
@@ -761,14 +706,14 @@ const ReceiverView = ({ senderId, addHistory, addTrustedDevice, trustedDevices }
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.6 }} className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
               <CheckCircle2 className="w-8 h-8 text-green-600" />
             </motion.div>
-            
+
             {/* 🔥 TRUSTED DEVICE PROMPT */}
             {!isTrusted && (
               <div className="w-full bg-[#FFFDD0]/30 dark:bg-[#1a0b00]/30 border border-[#7B3F00]/20 dark:border-[#d4a373]/20 p-4 rounded-xl mb-6 text-left">
-                <p className="text-sm font-bold text-[#3C1F00] dark:text-white mb-2 flex items-center gap-2"><Save className="w-4 h-4 text-[#C68E17] dark:text-[#e5b342]" /> Trust this device?</p>
+                <p className="text-sm font-bold text-[#3C1F00] dark:text-white mb-2 flex items-center gap-2"><Save className="w-4 h-4 text-[#C68E17] dark:text-[#e5b342]" /> Trust this sender?</p>
                 <div className="flex gap-2">
                   <input type="text" placeholder="e.g. My Laptop" value={deviceName} onChange={(e) => setDeviceName(e.target.value)} className="flex-1 px-3 py-2 rounded-lg bg-white dark:bg-[#2d1a0a] border border-[#C68E17]/30 outline-none focus:border-[#C68E17] text-sm text-[#3C1F00] dark:text-white" />
-                  <button onClick={handleSaveDevice} disabled={!deviceName.trim()} className="bg-[#7B3F00] dark:bg-[#e5b342] text-white dark:text-[#1a0b00] px-4 py-2 rounded-lg font-bold text-sm disabled:opacity-50">Save</button>
+                  <button onClick={handleSaveDevice} disabled={!deviceName.trim()} className="bg-[#7B3F00] dark:bg-[#e5b342] text-white dark:text-[#1a0b00] px-4 py-2 rounded-lg font-bold text-sm disabled:opacity-50 transition-colors">Save</button>
                 </div>
               </div>
             )}
@@ -872,8 +817,8 @@ export default function App() {
   const [isDark, setIsDark] = useState<boolean>(false);
   const [lava, setLava] = useState({ active: false, x: 0, y: 0, type: 'dark' });
 
-  // 🔥 NEW STORAGE HOOK ACTIVATED
-  const { history, addHistory, clearHistory, trustedDevices, addTrustedDevice } = useAppStorage();
+  // 🔥 INITIALIZE TRUSTED DEVICES STORAGE
+  const { trustedDevices, addTrustedDevice } = useTrustedDevices();
 
   const handleToggleTheme = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -958,21 +903,23 @@ export default function App() {
 
       <main className="flex-1 flex flex-col items-center justify-start p-4 sm:p-6 pt-24 md:pt-28 relative z-10 w-full">
         <AnimatePresence mode="wait">
-          {route === 'home' && <HomeView key="home" onShare={startSharing} history={history} clearHistory={clearHistory} />}
+          {route === 'home' && <HomeView key="home" onShare={startSharing} />}
           {route === 'send' && payloadToShare !== null && (
             <div className="w-full mt-8 sm:mt-16 mb-20 flex justify-center">
-              <SenderView key="send" payload={payloadToShare} onCancel={cancelSharing} addHistory={addHistory} />
+              <SenderView key="send" payload={payloadToShare} onCancel={cancelSharing} />
             </div>
           )}
           {route === 'receive' && receiverId && (
             <div className="w-full mt-8 sm:mt-16 mb-20 flex justify-center">
-               <ReceiverView key={`receive-${receiverId}`} senderId={receiverId} addHistory={addHistory} trustedDevices={trustedDevices} addTrustedDevice={addTrustedDevice} />
+               <ReceiverView key={`receive-${receiverId}`} senderId={receiverId} trustedDevices={trustedDevices} addTrustedDevice={addTrustedDevice} />
             </div>
           )}
         </AnimatePresence>
       </main>
 
       <Footer onOpenPrivacy={() => setShowPrivacyModal(true)} onOpenTerms={() => setShowTermsModal(true)} />
+      
+      {/* 🔥 PASS TRUSTED DEVICES TO MODAL */}
       <ReceiveModal isOpen={showReceiveModal} onClose={() => setShowReceiveModal(false)} trustedDevices={trustedDevices} />
 
       <LegalModal isOpen={showPrivacyModal} onClose={() => setShowPrivacyModal(false)} title="Privacy Policy">
