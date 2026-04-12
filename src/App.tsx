@@ -3,34 +3,30 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Peer, DataConnection } from 'peerjs';
 import { 
   UploadCloud, Copy, CheckCircle2, AlertCircle, Loader2, Download, 
-  Wifi, FileBox, X, Share2, QrCode, Lock, Zap, Infinity, ArrowRight, Moon, Sun, Type, FileUp, MessageSquare, Instagram, Github, Info, Heart, Mail, Wrench
+  Wifi, FileBox, X, Share2, QrCode, Lock, Zap, Infinity, ArrowRight, 
+  Moon, Sun, Type, FileUp, MessageSquare, Instagram, Github, Info, Heart, Mail, Wrench,
+  Clock, Save, Smartphone, RotateCw
 } from 'lucide-react';
 
 // --- TYPES ---
 type SharePayload = { type: 'files'; data: File[] } | { type: 'text'; data: string };
+type TransferRecord = { id: string; name: string; size: number; type: 'sent' | 'received'; status: 'completed' | 'failed'; timestamp: number };
+type TrustedDevice = { peerId: string; name: string; addedAt: number };
 
+// --- UTILS ---
 const copyToClipboard = async (text: string) => {
   if (navigator.clipboard && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch (err) {
-      console.error('Modern copy failed', err);
-    }
+    try { await navigator.clipboard.writeText(text); return; } catch (err) { console.error('Modern copy failed', err); }
   }
-  // Fallback for older browsers
   const textArea = document.createElement("textarea");
-  textArea.value = text;
-  document.body.appendChild(textArea);
-  textArea.select();
+  textArea.value = text; document.body.appendChild(textArea); textArea.select();
   try { document.execCommand('copy'); } catch (err) { console.error('Fallback copy failed', err); }
   document.body.removeChild(textArea);
 };
 
 const formatBytes = (bytes: number, decimals = 2) => {
   if (!+bytes) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
+  const k = 1024; const dm = decimals < 0 ? 0 : decimals;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
@@ -39,12 +35,11 @@ const formatBytes = (bytes: number, decimals = 2) => {
 const formatEta = (seconds: number) => {
   if (seconds === Infinity || seconds === 0 || isNaN(seconds)) return 'Calculating...';
   if (seconds < 60) return `${Math.round(seconds)}s left`;
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
+  const m = Math.floor(seconds / 60); const s = Math.round(seconds % 60);
   return `${m}m ${s}s left`;
 };
 
-// --- CUSTOM HOOK FOR SPEED & ETA ---
+// --- CUSTOM HOOKS ---
 const useTransferSpeed = () => {
   const [speed, setSpeed] = useState(0); 
   const [eta, setEta] = useState(Infinity);
@@ -52,29 +47,66 @@ const useTransferSpeed = () => {
   const lastBytesRef = useRef(0);
 
   const updateSpeed = useCallback((currentBytes: number, totalBytes: number) => {
-    const now = Date.now();
-    const timeDiff = now - lastTimeRef.current;
-    
+    const now = Date.now(); const timeDiff = now - lastTimeRef.current;
     if (timeDiff >= 500) { 
       const bytesDiff = currentBytes - lastBytesRef.current;
       const currentSpeed = (bytesDiff / timeDiff) * 1000; 
       setSpeed(currentSpeed);
-
       const remainingBytes = totalBytes - currentBytes;
       setEta(currentSpeed > 0 ? remainingBytes / currentSpeed : Infinity);
-
-      lastTimeRef.current = now;
-      lastBytesRef.current = currentBytes;
+      lastTimeRef.current = now; lastBytesRef.current = currentBytes;
     }
   }, []);
 
   const resetSpeed = useCallback(() => {
     setSpeed(0); setEta(Infinity);
-    lastTimeRef.current = Date.now();
-    lastBytesRef.current = 0;
+    lastTimeRef.current = Date.now(); lastBytesRef.current = 0;
   }, []);
 
   return { speed, eta, updateSpeed, resetSpeed };
+};
+
+const useAppStorage = () => {
+  const [history, setHistory] = useState<TransferRecord[]>([]);
+  const [trustedDevices, setTrustedDevices] = useState<TrustedDevice[]>([]);
+
+  useEffect(() => {
+    const storedHistory = localStorage.getItem('chocoshare_history');
+    const storedTrusted = localStorage.getItem('chocoshare_trusted');
+    if (storedHistory) setHistory(JSON.parse(storedHistory));
+    if (storedTrusted) setTrustedDevices(JSON.parse(storedTrusted));
+  }, []);
+
+  const addHistory = (record: Omit<TransferRecord, 'id' | 'timestamp'>) => {
+    const newRecord = { ...record, id: Math.random().toString(36).substring(2, 9), timestamp: Date.now() };
+    setHistory(prev => { const updated = [newRecord, ...prev].slice(0, 10); localStorage.setItem('chocoshare_history', JSON.stringify(updated)); return updated; });
+  };
+
+  const addTrustedDevice = (peerId: string, name: string) => {
+    if (trustedDevices.some(d => d.peerId === peerId)) return;
+    const newDevice = { peerId, name, addedAt: Date.now() };
+    setTrustedDevices(prev => { const updated = [...prev, newDevice]; localStorage.setItem('chocoshare_trusted', JSON.stringify(updated)); return updated; });
+  };
+
+  const removeTrustedDevice = (peerId: string) => {
+    setTrustedDevices(prev => { const updated = prev.filter(d => d.peerId !== peerId); localStorage.setItem('chocoshare_trusted', JSON.stringify(updated)); return updated; });
+  };
+
+  const clearHistory = () => { setHistory([]); localStorage.removeItem('chocoshare_history'); };
+
+  return { history, addHistory, clearHistory, trustedDevices, addTrustedDevice, removeTrustedDevice };
+};
+
+// --- PEER CONFIG ---
+const PEER_CONFIG = {
+  config: {
+    iceServers: [
+      { urls: "stun:stun.relay.metered.ca:80" },
+      { urls: "stun:free.expressturn.com:3478" },
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun.cloudflare.com:3478" }
+    ]
+  }
 };
 
 // --- BACKGROUND & HEADER COMPONENTS ---
@@ -112,49 +144,51 @@ const ProgressBar = ({ progress, statusText, speed = 0, eta = Infinity }: { prog
 );
 
 // --- MODALS & VIEWS ---
-const ReceiveModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
+const ReceiveModal = ({ isOpen, onClose, trustedDevices }: { isOpen: boolean; onClose: () => void; trustedDevices: TrustedDevice[] }) => {
   const [code, setCode] = useState('');
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!code.trim()) return;
-    
-    // 🔥 FIX 1: Convert to uppercase secretly behind the scenes when submitting!
-    let peerId = code.trim().toUpperCase();
-    
-    // Safety check just in case they pasted a full URL
+  const handleSubmit = (e?: React.FormEvent, directCode?: string) => {
+    if (e) e.preventDefault();
+    const finalCode = directCode || code;
+    if (!finalCode.trim()) return;
+    let peerId = finalCode.trim().toUpperCase();
     if (peerId.includes('#/RECEIVE/')) peerId = peerId.split('#/RECEIVE/')[1];
-    
     window.location.hash = `#/receive/${peerId}`;
     onClose(); setCode('');
   };
 
   return (
     <div className="fixed inset-0 bg-[#3C1F00]/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="bg-white dark:bg-[#2d1a0a] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-[#7B3F00]/20 dark:border-[#d4a373]/20 transition-colors">
-        <div className="bg-[#7B3F00] dark:bg-[#1a0b00] p-6 text-white flex justify-between items-center transition-colors">
+      <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="bg-white dark:bg-[#2d1a0a] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-[#7B3F00]/20 dark:border-[#d4a373]/20 transition-colors flex flex-col max-h-[90vh]">
+        <div className="bg-[#7B3F00] dark:bg-[#1a0b00] p-6 text-white flex justify-between items-center transition-colors shrink-0">
           <h3 className="text-xl font-bold flex items-center gap-2"><QrCode className="w-6 h-6"/> Receive Content</h3>
           <button onClick={onClose} className="hover:bg-white/20 p-1 rounded-full transition-colors"><X className="w-6 h-6" /></button>
         </div>
-        <div className="p-8">
+        
+        <div className="p-8 overflow-y-auto">
           <p className="text-[#7B3F00] dark:text-[#d4a373] mb-6 font-medium transition-colors">Enter the secure code or paste the full link shared by the sender below.</p>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            
-            {/* 🔥 FIX 2: Removed .toUpperCase() from onChange, and added 'uppercase' to the end of the className */}
-            <input 
-              type="text" 
-              placeholder="e.g. A7X9P2" 
-              value={code} 
-              onChange={(e) => setCode(e.target.value)} 
-              className="w-full px-4 py-4 rounded-xl border-2 border-[#C68E17]/30 dark:border-[#e5b342]/30 bg-transparent dark:text-white focus:border-[#7B3F00] dark:focus:border-[#e5b342] focus:ring-2 focus:ring-[#7B3F00]/20 outline-none transition-all text-[#3C1F00] font-bold text-center text-xl tracking-widest uppercase" 
-              autoFocus 
-            />
-            
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4 mb-6">
+            <input type="text" placeholder="e.g. A7X9P2" value={code} onChange={(e) => setCode(e.target.value)} className="w-full px-4 py-4 rounded-xl border-2 border-[#C68E17]/30 dark:border-[#e5b342]/30 bg-transparent dark:text-white focus:border-[#7B3F00] dark:focus:border-[#e5b342] focus:ring-2 focus:ring-[#7B3F00]/20 outline-none transition-all text-[#3C1F00] font-bold text-center text-xl tracking-widest uppercase" autoFocus />
             <button type="submit" disabled={!code.trim()} className="w-full py-4 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] dark:hover:bg-[#c28415] disabled:opacity-50 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
               Connect & Receive <ArrowRight className="w-5 h-5" />
             </button>
           </form>
+
+          {/* Trusted Devices Quick Connect */}
+          {trustedDevices.length > 0 && (
+            <div className="border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 pt-6">
+              <p className="text-sm font-bold text-[#7B3F00]/70 dark:text-[#d4a373]/70 mb-3 uppercase tracking-wider">Trusted Devices</p>
+              <div className="flex flex-wrap gap-2">
+                {trustedDevices.map((device) => (
+                  <button key={device.peerId} onClick={() => handleSubmit(undefined, device.peerId)} className="bg-[#FFFDD0]/50 dark:bg-[#1a0b00]/50 hover:bg-[#C68E17]/20 dark:hover:bg-[#e5b342]/20 border border-[#7B3F00]/20 dark:border-[#d4a373]/20 px-4 py-2 rounded-xl text-sm font-bold text-[#3C1F00] dark:text-white flex items-center gap-2 transition-all">
+                    <Smartphone className="w-4 h-4 text-[#C68E17] dark:text-[#e5b342]" />
+                    {device.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>
@@ -162,7 +196,7 @@ const ReceiveModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
 };
 
 const FeatureCard = ({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) => (
-  <motion.div whileHover={{ y: -5 }} className="bg-white/60 dark:bg-[#2d1a0a]/60 backdrop-blur-sm p-8 rounded-3xl shadow-sm border border-[#7B3F00]/10 dark:border-[#d4a373]/10 flex flex-col items-center text-center transition-colors">
+  <motion.div whileHover={{ y: -5 }} className="bg-white/60 dark:bg-[#2d1a0a]/60 backdrop-blur-sm p-8 rounded-3xl shadow-sm border border-[#7B3F00]/10 dark:border-[#d4a373]/10 flex flex-col items-center text-center transition-colors h-full">
     <div className="w-16 h-16 bg-[#FFFDD0] dark:bg-[#1a0b00] text-[#7B3F00] dark:text-[#e5b342] rounded-2xl flex items-center justify-center mb-6 shadow-sm transition-colors">
       {icon}
     </div>
@@ -171,38 +205,7 @@ const FeatureCard = ({ icon, title, desc }: { icon: React.ReactNode, title: stri
   </motion.div>
 );
 
-const MaintenanceView = () => (
-  <div className="min-h-screen bg-[#FFFDD0] dark:bg-[#110800] text-[#3C1F00] dark:text-white flex flex-col items-center justify-center p-6 relative overflow-hidden transition-colors">
-    <BackgroundShapes />
-    <ChocolateHeader />
-    
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }} 
-      animate={{ opacity: 1, y: 0 }} 
-      className="max-w-lg w-full bg-white/90 dark:bg-[#2d1a0a]/90 backdrop-blur-md rounded-3xl shadow-2xl border border-[#7B3F00]/10 dark:border-[#d4a373]/10 p-10 text-center relative z-10"
-    >
-      <motion.div 
-        animate={{ rotate: [0, -10, 10, -10, 0] }} 
-        transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-        className="w-20 h-20 bg-[#FFFDD0] dark:bg-[#1a0b00] rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner border border-[#C68E17]/30 dark:border-[#e5b342]/30"
-      >
-        <Wrench className="w-10 h-10 text-[#7B3F00] dark:text-[#e5b342]" />
-      </motion.div>
-      
-      <h1 className="text-3xl font-black mb-4 text-[#3C1F00] dark:text-white tracking-tight">We're upgrading the machinery.</h1>
-      <p className="text-[#7B3F00]/80 dark:text-[#d4a373]/80 font-medium mb-8 leading-relaxed">
-        ChocoShare is currently undergoing scheduled maintenance to improve speed and security. We'll be back online shortly. Grab a coffee and check back in a few minutes!
-      </p>
-      
-      <div className="inline-flex items-center justify-center gap-2 bg-[#FFFDD0]/50 dark:bg-[#1a0b00]/50 px-6 py-3 rounded-full border border-[#7B3F00]/20 dark:border-[#d4a373]/20">
-        <div className="w-2 h-2 bg-[#C68E17] dark:bg-[#e5b342] rounded-full animate-ping"></div>
-        <span className="text-sm font-bold text-[#7B3F00] dark:text-[#d4a373] uppercase tracking-wider">System Status: Maintenance</span>
-      </div>
-    </motion.div>
-  </div>
-);
-
-const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => {
+const HomeView = ({ onShare, history, clearHistory }: { onShare: (payload: SharePayload) => void, history: TransferRecord[], clearHistory: () => void }) => {
   const [activeTab, setActiveTab] = useState<'files' | 'text'>('files');
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [textInput, setTextInput] = useState('');
@@ -215,18 +218,11 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); e.stopPropagation();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onShare({ type: 'files', data: Array.from(e.dataTransfer.files) });
-    }
+    e.preventDefault(); e.stopPropagation(); setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) onShare({ type: 'files', data: Array.from(e.dataTransfer.files) });
   }, [onShare]);
 
-  const handleTextSubmit = () => {
-    if (textInput.trim()) {
-      onShare({ type: 'text', data: textInput.trim() });
-    }
-  };
+  const handleTextSubmit = () => { if (textInput.trim()) onShare({ type: 'text', data: textInput.trim() }); };
 
   return (
     <div className="w-full flex flex-col items-center pb-20">
@@ -241,7 +237,6 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
           <p className="text-[#7B3F00]/80 dark:text-[#d4a373]/80 font-medium transition-colors">Direct device-to-device transfer. Fast and Encrypted.</p>
         </div>
 
-        {/* --- TABS --- */}
         <div className="flex bg-[#FFFDD0] dark:bg-[#1a0b00] p-1 rounded-2xl mb-8 border border-[#7B3F00]/10 dark:border-[#d4a373]/10">
           <button onClick={() => setActiveTab('files')} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all ${activeTab === 'files' ? 'bg-white dark:bg-[#2d1a0a] text-[#C68E17] dark:text-[#e5b342] shadow-sm' : 'text-[#7B3F00]/60 dark:text-[#d4a373]/60 hover:text-[#7B3F00] dark:hover:text-[#d4a373]'}`}>
             <FileUp className="w-4 h-4" /> Files
@@ -251,52 +246,60 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
           </button>
         </div>
 
-        {/* --- FILE UPLOAD AREA --- */}
         {activeTab === 'files' && (
           <div
-            className={`relative border-4 border-dashed rounded-3xl p-6 md:p-8 text-center transition-all duration-300 ease-in-out cursor-pointer flex flex-col items-center justify-center ${
-              isDragging ? "border-[#C68E17] dark:border-[#e5b342] bg-[#FFFDD0]/50 dark:bg-[#1a0b00]/50 scale-105" : "border-[#7B3F00]/30 dark:border-[#d4a373]/30 hover:border-[#7B3F00]/60 dark:hover:border-[#d4a373]/60 hover:bg-[#FFFDD0]/20 dark:hover:bg-[#1a0b00]/30"
-            }`}
-            onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
+            className={`relative border-4 border-dashed rounded-3xl p-6 md:p-8 text-center transition-all duration-300 ease-in-out cursor-pointer flex flex-col items-center justify-center ${isDragging ? "border-[#C68E17] dark:border-[#e5b342] bg-[#FFFDD0]/50 dark:bg-[#1a0b00]/50 scale-105" : "border-[#7B3F00]/30 dark:border-[#d4a373]/30 hover:border-[#7B3F00]/60 dark:hover:border-[#d4a373]/60 hover:bg-[#FFFDD0]/20 dark:hover:bg-[#1a0b00]/30"}`}
+            onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onClick={() => fileInputRef.current?.click()}
           >
             <input type="file" multiple ref={fileInputRef} className="hidden" onChange={(e) => e.target.files && e.target.files.length > 0 && onShare({ type: 'files', data: Array.from(e.target.files) })} />
             <motion.div animate={{ y: isDragging ? -10 : 0 }}>
               <UploadCloud className={`w-16 h-16 mb-4 transition-colors ${isDragging ? "text-[#C68E17] dark:text-[#e5b342]" : "text-[#7B3F00]/50 dark:text-[#d4a373]/50"}`} />
             </motion.div>
-            <p className="text-xl font-bold text-[#3C1F00] dark:text-white mb-2 transition-colors">
-              {isDragging ? "Drop them like they're hot!" : "Drag & Drop your files here"}
-            </p>
+            <p className="text-xl font-bold text-[#3C1F00] dark:text-white mb-2 transition-colors">{isDragging ? "Drop them like they're hot!" : "Drag & Drop your files here"}</p>
             <p className="text-sm text-[#7B3F00]/70 dark:text-[#d4a373]/80 font-semibold bg-[#FFFDD0] dark:bg-[#1a0b00] px-4 py-1 rounded-full mt-2 border border-[#7B3F00]/10 dark:border-[#d4a373]/10 transition-colors">or click to browse</p>
           </div>
         )}
 
-        {/* --- TEXT INPUT AREA --- */}
         {activeTab === 'text' && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4">
-            <textarea 
-              placeholder="Paste a link, API key, or write a message here..." 
-              value={textInput} 
-              onChange={(e) => setTextInput(e.target.value)}
-              className="w-full h-40 p-4 rounded-2xl bg-[#FFFDD0]/30 dark:bg-[#1a0b00]/30 border-2 border-[#7B3F00]/20 dark:border-[#d4a373]/20 focus:border-[#C68E17] dark:focus:border-[#e5b342] text-[#3C1F00] dark:text-white outline-none resize-none transition-colors"
-            />
-            <button 
-              onClick={handleTextSubmit} 
-              disabled={!textInput.trim()}
-              className="w-full py-4 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] dark:hover:bg-[#c28415] disabled:opacity-50 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
-            >
-              Generate Share Code <ArrowRight className="w-5 h-5" />
-            </button>
+            <textarea placeholder="Paste a link, API key, or write a message here..." value={textInput} onChange={(e) => setTextInput(e.target.value)} className="w-full h-40 p-4 rounded-2xl bg-[#FFFDD0]/30 dark:bg-[#1a0b00]/30 border-2 border-[#7B3F00]/20 dark:border-[#d4a373]/20 focus:border-[#C68E17] dark:focus:border-[#e5b342] text-[#3C1F00] dark:text-white outline-none resize-none transition-colors" />
+            <button onClick={handleTextSubmit} disabled={!textInput.trim()} className="w-full py-4 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] dark:hover:bg-[#c28415] disabled:opacity-50 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2">Generate Share Code <ArrowRight className="w-5 h-5" /></button>
           </motion.div>
         )}
       </motion.div>
 
+      {/* --- DASHBOARD: RECENT TRANSFERS --- */}
+      {history.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="w-full max-w-xl mx-auto mt-8 bg-white/60 dark:bg-[#2d1a0a]/60 backdrop-blur-md rounded-3xl border border-[#7B3F00]/10 dark:border-[#d4a373]/10 p-6 transition-colors">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-bold text-[#3C1F00] dark:text-white flex items-center gap-2"><Clock className="w-5 h-5 text-[#C68E17] dark:text-[#e5b342]" /> Recent Activity</h3>
+            <button onClick={clearHistory} className="text-xs font-bold text-[#7B3F00]/60 dark:text-[#d4a373]/60 hover:text-red-500 transition-colors uppercase tracking-wider">Clear</button>
+          </div>
+          <div className="space-y-3">
+            {history.map((record) => (
+              <div key={record.id} className="flex items-center justify-between bg-white dark:bg-[#1a0b00] p-3 rounded-xl border border-[#7B3F00]/10 dark:border-[#d4a373]/10 shadow-sm transition-colors">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${record.type === 'sent' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'}`}>
+                    {record.type === 'sent' ? <UploadCloud className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                  </div>
+                  <div className="overflow-hidden">
+                    <p className="text-sm font-bold text-[#3C1F00] dark:text-white truncate">{record.name}</p>
+                    <p className="text-xs font-medium text-[#7B3F00]/70 dark:text-[#d4a373]/70">{formatBytes(record.size)} • {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                </div>
+                <div className="shrink-0 ml-2">
+                  {record.status === 'completed' ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <X className="w-5 h-5 text-red-500" />}
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       <motion.div id="how-it-works" initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.8 }} className="w-full max-w-6xl mx-auto mt-32 px-4 scroll-mt-28">
         <div className="text-center mb-16">
           <h2 className="text-4xl font-black text-[#3C1F00] dark:text-white mb-6 tracking-tight transition-colors">How ChocoShare Works ?</h2>
-          <p className="text-lg text-[#7B3F00] dark:text-[#d4a373] max-w-2xl mx-auto font-medium transition-colors">
-            Unlike other services, ChocoShare doesn't store your files or text on a server. We use Peer-to-Peer (P2P) WebRTC technology to connect your device directly to the receiver. It's just you and them.
-          </p>
+          <p className="text-lg text-[#7B3F00] dark:text-[#d4a373] max-w-2xl mx-auto font-medium transition-colors">Unlike other services, ChocoShare doesn't store your files or text on a server. We use Peer-to-Peer (P2P) WebRTC technology to connect your device directly to the receiver. It's just you and them.</p>
         </div>
         <div className="grid md:grid-cols-3 gap-8 text-left">
           <FeatureCard icon={<Infinity className="w-8 h-8" />} title="No Size Limits" desc="Because data goes directly from your device to theirs, there are no cloud storage limits. Send 10MB or 100GB seamlessly." />
@@ -308,96 +311,8 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
   );
 };
 
-// --- INDIVIDUAL TRANSFER TASK (For 1-to-Many Sharing) ---
-const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: SharePayload }) => {
-  const [status, setStatus] = useState<string>('connecting'); 
-  const [progress, setProgress] = useState<number>(0);
-  const [fileProgress, setFileProgress] = useState({ current: 0, total: payload.type === 'files' ? payload.data.length : 1 });
-  const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed();
-
-  useEffect(() => {
-    let currentIndex = 0;
-    let isTransferring = false; 
-    let lastUiUpdate = 0;
-
-    const sendInitialData = () => {
-      if (payload.type === 'text') {
-        conn.send({ type: 'text_message', data: payload.data });
-        setStatus('complete');
-      } else {
-        const files = payload.data;
-        if (currentIndex >= files.length) {
-          setStatus('complete'); conn.send({ type: 'all_done' }); return;
-        }
-        const file = files[currentIndex];
-        setFileProgress({ current: currentIndex + 1, total: files.length });
-        resetSpeed(); 
-        lastUiUpdate = 0; 
-        conn.send({ type: 'metadata', name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
-      }
-    };
-    
-    if (conn.open) sendInitialData();
-    else conn.on('open', () => sendInitialData());
-
-    const CHUNK_SIZE = 256 * 1024; 
-    
-    const sendNextChunk = async (file: File, offset: number) => {
-      if (offset >= file.size) { conn.send({ type: 'eof' }); return; }
-      
-      if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024 * 16) {
-        setTimeout(() => sendNextChunk(file, offset), 5); return; 
-      }
-
-      const slice = file.slice(offset, offset + CHUNK_SIZE);
-      const buffer = await slice.arrayBuffer(); 
-      
-      conn.send(buffer);
-      const newOffset = offset + CHUNK_SIZE;
-      
-      if (newOffset - lastUiUpdate > 1024 * 1024 || newOffset >= file.size) {
-         setProgress(Math.min(100, (newOffset / file.size) * 100));
-         lastUiUpdate = newOffset;
-      }
-      updateSpeed(newOffset, file.size);
-      setTimeout(() => sendNextChunk(file, newOffset), 0); 
-    };
-
-    conn.on('data', (data: any) => {
-      if (data.type === 'request_metadata') {
-        if (!isTransferring) sendInitialData();
-      }
-      else if (data.type === 'ready' && payload.type === 'files') {
-        if (!isTransferring) {
-          isTransferring = true; setStatus('transferring'); sendNextChunk(payload.data[currentIndex], 0); 
-        }
-      } 
-      else if (data.type === 'done' && payload.type === 'files') {
-        currentIndex++; isTransferring = false; sendInitialData();
-      }
-    });
-    
-    conn.on('close', () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); });
-  }, [conn, payload, resetSpeed, updateSpeed]); 
-
-  return (
-    <div className="w-full bg-[#FFFDD0]/60 dark:bg-[#1a0b00]/60 p-4 rounded-xl border border-[#7B3F00]/20 dark:border-[#d4a373]/20 mb-3 shadow-sm transition-colors">
-      <div className="flex justify-between items-center mb-1">
-        <span className="font-bold text-[#3C1F00] dark:text-white text-sm flex items-center gap-2">
-          {status === 'complete' ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : status === 'error' ? <X className="w-4 h-4 text-red-500" /> : <Loader2 className="w-4 h-4 animate-spin text-[#C68E17]" />}
-          Guest: {conn.peer.substring(0, 6).toUpperCase()}
-        </span>
-        <span className={`text-xs font-bold uppercase tracking-wider ${status === 'complete' ? 'text-green-600' : status === 'error' ? 'text-red-500' : 'text-[#7B3F00]/70 dark:text-[#d4a373]/70'}`}>
-          {status}
-        </span>
-      </div>
-      {status === 'transferring' && <ProgressBar progress={progress} statusText={`File ${fileProgress.current}/${fileProgress.total}`} speed={speed} eta={eta} />}
-    </div>
-  );
-};
-
 // --- SENDER VIEW (The Room) ---
-const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () => void }) => {
+const SenderView = ({ payload, onCancel, addHistory }: { payload: SharePayload; onCancel: () => void; addHistory: any }) => {
   const [peerId, setPeerId] = useState<string | null>(null);
   const [receivers, setReceivers] = useState<DataConnection[]>([]);
   const [copied, setCopied] = useState<boolean>(false);
@@ -406,41 +321,16 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
   const shareUrl = peerId ? `${window.location.origin}${window.location.pathname}#/receive/${peerId}` : '';
 
   useEffect(() => {
-    // 🔥 Generates a highly secure 6-character Alphanumeric code (e.g., A7X9P2)
     const id = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
-    const peer = new Peer(id, {
-      config: {
-        iceServers: [
-          { urls: "stun:stun.relay.metered.ca:80" },
-          { urls: "stun:free.expressturn.com:3478" },
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun.cloudflare.com:3478" },
-          {
-            urls: "turn:free.expressturn.com:3478?transport=tcp",
-            username: "000000002088860057",
-            credential: "I+TSjeTYD3+Jd/eANOhkPvvTh8k="
-          },
-          {
-            urls: "turn:free.expressturn.com:3478",
-            username: "000000002088916220",
-            credential: "nhYjASv8X4q9sOPjsK1VyVxn32c="
-          }
-        ]
-      }
-    });
+    const peer = new Peer(id, PEER_CONFIG);
     peerRef.current = peer;
 
     peer.on('open', (id) => setPeerId(id));
-    
-    // 🔥 1-to-Many Magic: Every time a new person connects, add them to the list!
     peer.on('connection', (conn) => {
-      // Must use reliable:true and binary serialization for high-speed buffers
       conn.serialization = 'binary';
       setReceivers(prev => [...prev, conn]);
     });
     
-    peer.on('error', (err) => console.error(err));
     return () => peer.destroy();
   }, []); 
 
@@ -490,18 +380,16 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
               </button>
             </div>
 
-            {/* --- LIST OF ACTIVE GUESTS --- */}
             <div className="w-full">
               {receivers.length > 0 && <p className="text-sm font-bold text-[#7B3F00] dark:text-[#d4a373] mb-2 uppercase tracking-wider text-left">Active Transfers ({receivers.length})</p>}
               <AnimatePresence>
                 {receivers.map((conn, index) => (
                   <motion.div key={index} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-                    <TransferTask conn={conn} payload={payload} />
+                    <TransferTask conn={conn} payload={payload} addHistory={addHistory} />
                   </motion.div>
                 ))}
               </AnimatePresence>
             </div>
-
           </motion.div>
         )}
 
@@ -511,146 +399,228 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
   );
 };
 
-const ReceiverView = ({ senderId }: { senderId: string }) => {
+const TransferTask = ({ conn, payload, addHistory }: { conn: DataConnection, payload: SharePayload, addHistory: any }) => {
+  const [status, setStatus] = useState<string>('connecting'); 
+  const [progress, setProgress] = useState<number>(0);
+  const [fileProgress, setFileProgress] = useState({ current: 0, total: payload.type === 'files' ? payload.data.length : 1 });
+  const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed();
+
+  useEffect(() => {
+    let currentIndex = 0;
+    let isTransferring = false; 
+    let lastUiUpdate = 0;
+
+    const sendInitialData = () => {
+      if (payload.type === 'text') {
+        conn.send({ type: 'text_message', data: payload.data });
+        setStatus('complete');
+        addHistory({ name: 'Text Snippet', size: payload.data.length, type: 'sent', status: 'completed' });
+      } else {
+        const files = payload.data;
+        if (currentIndex >= files.length) {
+          setStatus('complete'); conn.send({ type: 'all_done' }); return;
+        }
+        const file = files[currentIndex];
+        setFileProgress({ current: currentIndex + 1, total: files.length });
+        resetSpeed(); lastUiUpdate = 0; 
+        conn.send({ type: 'metadata', name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
+      }
+    };
+    
+    if (conn.open) sendInitialData();
+    else conn.on('open', () => sendInitialData());
+
+    const CHUNK_SIZE = 256 * 1024; 
+    
+    const sendNextChunk = async (file: File, offset: number) => {
+      if (offset >= file.size) { conn.send({ type: 'eof' }); return; }
+      if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024 * 16) { setTimeout(() => sendNextChunk(file, offset), 5); return; }
+
+      const slice = file.slice(offset, offset + CHUNK_SIZE);
+      const buffer = await slice.arrayBuffer(); 
+      conn.send(buffer);
+      
+      const newOffset = offset + CHUNK_SIZE;
+      if (newOffset - lastUiUpdate > 1024 * 1024 || newOffset >= file.size) {
+         setProgress(Math.min(100, (newOffset / file.size) * 100)); lastUiUpdate = newOffset;
+      }
+      updateSpeed(newOffset, file.size);
+      setTimeout(() => sendNextChunk(file, newOffset), 0); 
+    };
+
+    conn.on('data', (data: any) => {
+      if (data.type === 'request_metadata') {
+        if (!isTransferring) sendInitialData();
+      }
+      else if (data.type === 'ready' && payload.type === 'files') {
+        if (!isTransferring) {
+          isTransferring = true; setStatus('transferring'); sendNextChunk(payload.data[currentIndex], 0); 
+        }
+      }
+      // --- RESUME LOGIC (Sender Side) ---
+      else if (data.type === 'resume' && payload.type === 'files') {
+        const file = payload.data[currentIndex];
+        if (file && data.name === file.name) {
+          isTransferring = true; setStatus('transferring'); sendNextChunk(file, data.offset);
+        } else {
+          sendInitialData(); // If out of sync, restart current file
+        }
+      }
+      else if (data.type === 'done' && payload.type === 'files') {
+        addHistory({ name: payload.data[currentIndex].name, size: payload.data[currentIndex].size, type: 'sent', status: 'completed' });
+        currentIndex++; isTransferring = false; sendInitialData();
+      }
+    });
+    
+    conn.on('close', () => { 
+      setStatus(prev => {
+        if (prev !== 'complete') {
+          if (payload.type === 'files' && payload.data[currentIndex]) addHistory({ name: payload.data[currentIndex].name, size: payload.data[currentIndex].size, type: 'sent', status: 'failed' });
+          return 'error';
+        }
+        return prev;
+      }); 
+    });
+  }, [conn, payload, resetSpeed, updateSpeed, addHistory]); 
+
+  return (
+    <div className="w-full bg-[#FFFDD0]/60 dark:bg-[#1a0b00]/60 p-4 rounded-xl border border-[#7B3F00]/20 dark:border-[#d4a373]/20 mb-3 shadow-sm transition-colors">
+      <div className="flex justify-between items-center mb-1">
+        <span className="font-bold text-[#3C1F00] dark:text-white text-sm flex items-center gap-2">
+          {status === 'complete' ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : status === 'error' ? <X className="w-4 h-4 text-red-500" /> : <Loader2 className="w-4 h-4 animate-spin text-[#C68E17]" />}
+          Guest: {conn.peer.substring(0, 6).toUpperCase()}
+        </span>
+        <span className={`text-xs font-bold uppercase tracking-wider ${status === 'complete' ? 'text-green-600' : status === 'error' ? 'text-red-500' : 'text-[#7B3F00]/70 dark:text-[#d4a373]/70'}`}>
+          {status}
+        </span>
+      </div>
+      {status === 'transferring' && <ProgressBar progress={progress} statusText={`File ${fileProgress.current}/${fileProgress.total}`} speed={speed} eta={eta} />}
+    </div>
+  );
+};
+
+const ReceiverView = ({ senderId, addHistory, addTrustedDevice, trustedDevices }: { senderId: string, addHistory: any, addTrustedDevice: any, trustedDevices: TrustedDevice[] }) => {
   const [status, setStatus] = useState<string>('connecting'); 
   const [progress, setProgress] = useState<number>(0);
   const [metadata, setMetadata] = useState<any>(null);
   const [receivedText, setReceivedText] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [deviceName, setDeviceName] = useState('');
+  
   const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed(); 
+  
+  // Storage for Resumable Transfers
+  const chunksRef = useRef<any[]>([]);
+  const receivedSizeRef = useRef(0);
+  const activePeerRef = useRef<Peer | null>(null);
 
-  useEffect(() => {
-    let activeUrls: string[] = []; 
-    const peer = new Peer({
-      config: {
-        iceServers: [
-          { urls: "stun:stun.relay.metered.ca:80" },
-          { urls: "stun:free.expressturn.com:3478" },
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun.cloudflare.com:3478" },
-          {
-            urls: "turn:free.expressturn.com:3478?transport=tcp",
-            username: "000000002088860057",
-            credential: "I+TSjeTYD3+Jd/eANOhkPvvTh8k="
-          },
-          {
-            urls: "turn:free.expressturn.com:3478",
-            username: "000000002088916220",
-            credential: "nhYjASv8X4q9sOPjsK1VyVxn32c="
-          }
-        ]
-      }
-    });
+  const establishConnection = useCallback((isResume = false) => {
+    setStatus('connecting');
+    const peer = new Peer(PEER_CONFIG);
+    activePeerRef.current = peer;
     let handshakeInterval: any;
 
     peer.on('open', () => {
-      // 🔥 Add serialization: 'binary' here
       const conn = peer.connect(senderId, { reliable: true, serialization: 'binary' });
-      let chunks: any[] = []; 
-      let receivedSize = 0; 
-      let fileMeta: any = null;
-      let lastUiUpdate = 0; // 🔥 Added UI Throttle tracker
+      let lastUiUpdate = receivedSizeRef.current; 
 
       conn.on('open', () => {
-        setStatus('connecting');
-        conn.send({ type: 'request_metadata' });
-        
-        handshakeInterval = setInterval(() => {
-          if (conn.open) {
-            conn.send({ type: 'request_metadata' });
-          }
-        }, 1000);
+        if (isResume && metadata) {
+          conn.send({ type: 'resume', offset: receivedSizeRef.current, name: metadata.name });
+          setStatus('receiving');
+        } else {
+          conn.send({ type: 'request_metadata' });
+          handshakeInterval = setInterval(() => { if (conn.open) conn.send({ type: 'request_metadata' }); }, 1000);
+        }
       });
 
       conn.on('data', (data: any) => {
-        
-        // 🔥 THE BULLETPROOF CHECK: If it doesn't have a 'type' property, it is our raw file chunk!
         if (!data.type) {
-          chunks.push(data); 
-          
-          // Safely get the size no matter what weird binary format the browser uses
+          chunksRef.current.push(data); 
           const chunkSize = data.byteLength || data.size || data.length || 0;
-          receivedSize += chunkSize;
+          receivedSizeRef.current += chunkSize;
           
-          // 🔥 UI Throttle for Receiver (Updates every 1MB to prevent lag)
-          if (receivedSize - lastUiUpdate > 1024 * 1024 || receivedSize >= fileMeta.size) {
-             setProgress(Math.min(100, (receivedSize / fileMeta.size) * 100));
-             lastUiUpdate = receivedSize;
+          if (metadata && (receivedSizeRef.current - lastUiUpdate > 1024 * 1024 || receivedSizeRef.current >= metadata.size)) {
+             setProgress(Math.min(100, (receivedSizeRef.current / metadata.size) * 100)); lastUiUpdate = receivedSizeRef.current;
           }
-          updateSpeed(receivedSize, fileMeta.size);
+          if (metadata) updateSpeed(receivedSizeRef.current, metadata.size);
           return;
         }
 
-        // --- Handle JSON Objects for Control Messages ---
-        if (data.type === 'metadata' || data.type === 'text_message') {
-          if (handshakeInterval) clearInterval(handshakeInterval);
-        }
+        if (data.type === 'metadata' || data.type === 'text_message') { if (handshakeInterval) clearInterval(handshakeInterval); }
 
         if (data.type === 'text_message') {
-          setReceivedText(data.data);
-          setStatus('complete');
+          setReceivedText(data.data); setStatus('complete');
+          addHistory({ name: 'Text Snippet', size: data.data.length, type: 'received', status: 'completed' });
         }
         else if (data.type === 'metadata') {
-          fileMeta = data; setMetadata(data); chunks = []; receivedSize = 0; lastUiUpdate = 0; setProgress(0); setStatus('receiving'); 
-          resetSpeed(); 
-          conn.send({ type: 'ready' }); 
+          setMetadata(data); chunksRef.current = []; receivedSizeRef.current = 0; lastUiUpdate = 0; setProgress(0); setStatus('receiving'); 
+          resetSpeed(); conn.send({ type: 'ready' }); 
         } 
         else if (data.type === 'chunk') {
-           // Fallback just in case older devices send the chunk wrapped in an object
-           chunks.push(new Blob([data.data])); receivedSize += data.data.byteLength;
-           if (fileMeta) {
-             setProgress((receivedSize / fileMeta.size) * 100);
-             updateSpeed(receivedSize, fileMeta.size); 
-           }
+           chunksRef.current.push(new Blob([data.data])); receivedSizeRef.current += data.data.byteLength;
+           if (metadata) { setProgress((receivedSizeRef.current / metadata.size) * 100); updateSpeed(receivedSizeRef.current, metadata.size); }
         }
         else if (data.type === 'eof') {
-          // Compile all chunks into a single file Blob at the very end
-          const finalBlob = new Blob(chunks, { type: fileMeta.mime });
+          const finalBlob = new Blob(chunksRef.current, { type: metadata.mime });
           const url = URL.createObjectURL(finalBlob);
-          activeUrls.push(url); 
-          
-          const a = document.createElement('a');
-          a.href = url; a.download = fileMeta.name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          const a = document.createElement('a'); a.href = url; a.download = metadata.name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          URL.revokeObjectURL(url);
           conn.send({ type: 'done' });
+          addHistory({ name: metadata.name, size: metadata.size, type: 'received', status: 'completed' });
         }
         else if (data.type === 'all_done') { setStatus('complete'); }
       });
       
-      conn.on('close', () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); });
+      conn.on('close', () => { 
+        setStatus(prev => {
+          if (prev !== 'complete') {
+            if (metadata) addHistory({ name: metadata.name, size: metadata.size, type: 'received', status: 'failed' });
+            return 'error';
+          }
+          return prev;
+        }); 
+      });
     });
+    
     peer.on('error', (err) => { console.error(err); setStatus('error'); });
     
-    return () => { 
-      if (handshakeInterval) clearInterval(handshakeInterval);
-      activeUrls.forEach(url => URL.revokeObjectURL(url)); 
-      peer.destroy(); 
-    };
-  }, [senderId, resetSpeed, updateSpeed]); 
+    return () => { if (handshakeInterval) clearInterval(handshakeInterval); };
+  }, [senderId, metadata, updateSpeed, resetSpeed, addHistory]);
 
-  const handleCopyText = () => {
-    if (receivedText) {
-      copyToClipboard(receivedText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  }
+  useEffect(() => {
+    const cleanup = establishConnection(false);
+    return () => { cleanup(); if (activePeerRef.current) activePeerRef.current.destroy(); };
+  }, []); // Only run once on mount
+
+  const handleResume = () => {
+    if (activePeerRef.current) activePeerRef.current.destroy();
+    establishConnection(true);
+  };
+
+  const handleSaveDevice = () => { if (deviceName.trim()) addTrustedDevice(senderId, deviceName.trim()); };
+  const isTrusted = trustedDevices.some(d => d.peerId === senderId);
 
   return (
     <motion.div initial={{ opacity: 0, scale: 0.9, y: 30 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", bounce: 0.4 }} className="w-full max-w-md mx-auto bg-white/95 dark:bg-[#2d1a0a]/95 backdrop-blur-md rounded-3xl shadow-2xl border border-[#7B3F00]/10 dark:border-[#d4a373]/10 overflow-hidden transition-colors">
       <div className={`p-4 text-center text-white font-bold flex items-center justify-center gap-2 ${ status === 'connecting' ? 'bg-[#C68E17] dark:bg-[#e5b342]' : status === 'receiving' ? 'bg-blue-500' : status === 'complete' ? 'bg-green-500' : 'bg-red-500' }`}>
-        {status === 'connecting' && <><Loader2 className="animate-spin" /> Connecting to Sender...</>}
+        {status === 'connecting' && <><Loader2 className="animate-spin" /> Connecting...</>}
         {status === 'receiving' && <><Download className="animate-bounce" /> Receiving Data...</>}
         {status === 'complete' && <><CheckCircle2 /> Transfer Complete!</>}
-        {status === 'error' && <><X /> Link Expired or Broken</>}
+        {status === 'error' && <><X /> Connection Interrupted</>}
       </div>
 
       <div className="p-8 flex flex-col items-center">
         {metadata && status !== 'complete' && !receivedText && (
           <div className="flex items-center gap-3 w-full bg-[#FFFDD0]/50 dark:bg-[#1a0b00]/50 p-4 rounded-xl mb-6 border border-[#7B3F00]/20 dark:border-[#d4a373]/20 shadow-sm transition-colors">
             <FileBox className="text-[#7B3F00] dark:text-[#e5b342] w-8 h-8 flex-shrink-0" />
-            <div className="overflow-hidden">
+            <div className="overflow-hidden w-full">
               <p className="font-bold text-[#3C1F00] dark:text-white truncate">{metadata.name}</p>
-              <p className="text-sm text-[#7B3F00] dark:text-[#d4a373]">{formatBytes(metadata.size)}</p>
+              <div className="flex justify-between items-center w-full">
+                <p className="text-sm text-[#7B3F00] dark:text-[#d4a373]">{formatBytes(metadata.size)}</p>
+                {status === 'error' && receivedSizeRef.current > 0 && (
+                   <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold">{formatBytes(receivedSizeRef.current)} saved</span>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -664,43 +634,43 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
 
         {status === 'receiving' && !receivedText && <ProgressBar progress={progress} statusText={`Downloading ${metadata?.name}...`} speed={speed} eta={eta} />}
 
-        {status === 'complete' && receivedText && (
-          <div className="w-full flex flex-col mt-2 mb-6">
-            <div className="flex items-center gap-2 mb-3 text-[#7B3F00] dark:text-[#d4a373] font-bold">
-              <MessageSquare className="w-5 h-5" /> Received Message:
-            </div>
-            <div className="bg-[#FFFDD0]/50 dark:bg-[#1a0b00]/50 p-4 rounded-xl border border-[#7B3F00]/20 dark:border-[#d4a373]/20 text-[#3C1F00] dark:text-white mb-4 max-h-48 overflow-y-auto whitespace-pre-wrap word-break-all font-medium text-sm">
-              {receivedText}
-            </div>
-            <button onClick={handleCopyText} className="flex items-center justify-center gap-2 w-full py-3 bg-white dark:bg-[#2d1a0a] border-2 border-[#C68E17]/30 dark:border-[#e5b342]/30 hover:border-[#C68E17] dark:hover:border-[#e5b342] text-[#3C1F00] dark:text-white rounded-xl font-bold transition-all shadow-sm">
-              {copied ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5 text-[#C68E17] dark:text-[#e5b342]" />}
-              {copied ? "Copied to Clipboard!" : "Copy Text"}
+        {/* ERROR WITH RESUME OPTION */}
+        {status === 'error' && (
+          <div className="text-center w-full py-2">
+            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <p className="font-bold text-[#3C1F00] dark:text-white mb-2 text-xl">Connection Lost</p>
+            <p className="text-sm text-[#7B3F00]/70 dark:text-[#d4a373]/70 mb-6 font-medium">Network error or sender closed tab.</p>
+            
+            {receivedSizeRef.current > 0 && metadata ? (
+              <button onClick={handleResume} className="flex items-center justify-center gap-2 w-full py-3 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] dark:hover:bg-[#c28415] text-white rounded-xl font-bold transition-all shadow-md mb-3">
+                <RotateCw className="w-5 h-5" /> Resume Transfer
+              </button>
+            ) : null}
+
+            <button onClick={() => window.location.hash = ''} className="bg-[#FFFDD0] dark:bg-[#1a0b00] border-2 border-[#7B3F00]/20 dark:border-[#d4a373]/20 hover:border-[#7B3F00] dark:hover:border-[#e5b342] text-[#7B3F00] dark:text-[#e5b342] w-full py-3 rounded-xl font-bold transition-all shadow-sm">
+              Go to Homepage
             </button>
           </div>
         )}
 
-        {status === 'complete' && !receivedText && (
-          <div className="text-center w-full py-6">
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.6 }} className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-10 h-10 text-green-600" />
-            </motion.div>
-            <p className="font-bold text-[#3C1F00] dark:text-white mb-2 text-xl">All Done!</p>
-            <p className="text-sm text-[#7B3F00]/70 dark:text-[#d4a373]/70 mb-6 font-medium">Files have been saved to your device.</p>
-          </div>
-        )}
-
+        {/* SUCCESS STATE & SAVE DEVICE LOGIC */}
         {status === 'complete' && (
-          <button onClick={() => window.location.hash = ''} className="bg-[#7B3F00] dark:bg-[#e5b342] hover:bg-[#3C1F00] dark:hover:bg-[#c28415] text-white dark:text-[#1a0b00] px-8 py-3 rounded-xl font-bold transition-all shadow-md w-full">
-            Go to Homepage
-          </button>
-        )}
+          <div className="text-center w-full py-2 flex flex-col items-center">
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.6 }} className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="w-8 h-8 text-green-600" />
+            </motion.div>
+            
+            {!isTrusted && (
+              <div className="w-full bg-[#FFFDD0]/30 dark:bg-[#1a0b00]/30 border border-[#7B3F00]/20 dark:border-[#d4a373]/20 p-4 rounded-xl mb-6 text-left">
+                <p className="text-sm font-bold text-[#3C1F00] dark:text-white mb-2 flex items-center gap-2"><Save className="w-4 h-4 text-[#C68E17] dark:text-[#e5b342]" /> Trust this device?</p>
+                <div className="flex gap-2">
+                  <input type="text" placeholder="e.g. My Laptop" value={deviceName} onChange={(e) => setDeviceName(e.target.value)} className="flex-1 px-3 py-2 rounded-lg bg-white dark:bg-[#2d1a0a] border border-[#C68E17]/30 outline-none focus:border-[#C68E17] text-sm text-[#3C1F00] dark:text-white" />
+                  <button onClick={handleSaveDevice} disabled={!deviceName.trim()} className="bg-[#7B3F00] dark:bg-[#e5b342] text-white dark:text-[#1a0b00] px-4 py-2 rounded-lg font-bold text-sm disabled:opacity-50">Save</button>
+                </div>
+              </div>
+            )}
 
-        {status === 'error' && (
-          <div className="text-center w-full py-6">
-            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <p className="font-bold text-[#3C1F00] dark:text-white mb-2 text-xl">Transfer Failed</p>
-            <p className="text-sm text-[#7B3F00]/70 dark:text-[#d4a373]/70 mb-6 font-medium">The sender might have closed their tab, or the link is invalid.</p>
-            <button onClick={() => window.location.hash = ''} className="bg-[#7B3F00] dark:bg-[#e5b342] hover:bg-[#3C1F00] dark:hover:bg-[#c28415] text-white dark:text-[#1a0b00] px-8 py-3 rounded-xl font-bold transition-all shadow-md">
+            <button onClick={() => window.location.hash = ''} className="bg-[#7B3F00] dark:bg-[#e5b342] hover:bg-[#3C1F00] dark:hover:bg-[#c28415] text-white dark:text-[#1a0b00] px-8 py-3 rounded-xl font-bold transition-all shadow-md w-full">
               Go to Homepage
             </button>
           </div>
@@ -710,129 +680,40 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
   );
 };
 
-// --- LEGAL MODALS ---
-const LegalModal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose: () => void, title: string, children: React.ReactNode }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-[#3C1F00]/40 dark:bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="bg-white dark:bg-[#2d1a0a] rounded-3xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden border border-[#7B3F00]/20 dark:border-[#d4a373]/20 flex flex-col transition-colors">
-        <div className="bg-[#7B3F00] dark:bg-[#1a0b00] p-6 text-white flex justify-between items-center transition-colors shrink-0">
-          <h3 className="text-xl font-bold flex items-center gap-2">{title}</h3>
-          <button onClick={onClose} className="hover:bg-white/20 p-1 rounded-full transition-colors"><X className="w-6 h-6" /></button>
-        </div>
-        <div className="p-6 md:p-8 overflow-y-auto text-[#7B3F00]/80 dark:text-[#d4a373]/90 font-medium space-y-4">
-          {children}
-        </div>
-        <div className="p-6 border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 bg-[#FFFDD0]/30 dark:bg-[#110800]/30 shrink-0">
-          <button onClick={onClose} className="w-full py-3 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] dark:hover:bg-[#c28415] text-white font-bold rounded-xl transition-colors">
-            I Understand
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-};
-
-// --- FOOTER COMPONENT ---
-const Footer = ({ onOpenPrivacy, onOpenTerms }: { onOpenPrivacy: () => void, onOpenTerms: () => void }) => (
-  <footer className="w-full relative z-40 border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 bg-[#FFFDD0]/80 dark:bg-[#110800]/80 backdrop-blur-md transition-colors mt-auto">
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-10 sm:gap-8 mb-12">
-        
-        <div className="md:col-span-2">
-          <div className="flex items-center gap-3 mb-4 cursor-pointer" onClick={() => {window.location.hash = ''; window.scrollTo(0,0);}}>
-            <img src="/logo.png" alt="ChocoShare Logo" className="w-8 h-8 sm:w-10 sm:h-10 object-contain drop-shadow-md" />
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-[#3C1F00] dark:text-white transition-colors">
-              Choco<span className="text-[#7B3F00] dark:text-[#e5b342] transition-colors">share</span>
-            </h2>
-          </div>
-          <p className="text-[#7B3F00]/80 dark:text-[#d4a373]/80 font-medium max-w-sm transition-colors mb-6 leading-relaxed">
-            Redefining secure, device-to-device file transfers. No cloud storage, no file size limits, just lightning-fast peer-to-peer encryption.
-          </p>
-          <div className="flex gap-4">
-            <a href="https://github.com/basic30" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full flex items-center justify-center bg-white dark:bg-[#2d1a0a] text-[#7B3F00]/70 hover:text-[#C68E17] dark:text-[#d4a373]/70 dark:hover:text-[#e5b342] border border-[#7B3F00]/10 dark:border-[#d4a373]/20 shadow-sm hover:scale-110 transition-all"><Github className="w-4 h-4" /></a>
-            <a href="https://instagram.com/snahasish0915" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full flex items-center justify-center bg-white dark:bg-[#2d1a0a] text-[#7B3F00]/70 hover:text-[#C68E17] dark:text-[#d4a373]/70 dark:hover:text-[#e5b342] border border-[#7B3F00]/10 dark:border-[#d4a373]/20 shadow-sm hover:scale-110 transition-all"><Instagram className="w-4 h-4" /></a>
-            <a href="mailto:snahasishdey143@gmail.com" className="w-10 h-10 rounded-full flex items-center justify-center bg-white dark:bg-[#2d1a0a] text-[#7B3F00]/70 hover:text-[#C68E17] dark:text-[#d4a373]/70 dark:hover:text-[#e5b342] border border-[#7B3F00]/10 dark:border-[#d4a373]/20 shadow-sm hover:scale-110 transition-all"><Mail className="w-4 h-4" /></a>
-          </div>
-        </div>
-
-        <div>
-          <h3 className="font-bold text-[#3C1F00] dark:text-white mb-5 transition-colors uppercase tracking-wider text-sm">Product</h3>
-          <ul className="space-y-3 sm:space-y-4">
-            <li><button onClick={() => {window.location.hash = ''; window.scrollTo({ top: 0, behavior: 'smooth' });}} className="text-[#7B3F00]/80 hover:text-[#7B3F00] dark:text-[#d4a373]/80 dark:hover:text-[#e5b342] transition-colors font-medium">Home</button></li>
-            <li><button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })} className="text-[#7B3F00]/80 hover:text-[#7B3F00] dark:text-[#d4a373]/80 dark:hover:text-[#e5b342] transition-colors font-medium">How it Works</button></li>
-          </ul>
-        </div>
-
-        <div>
-          <h3 className="font-bold text-[#3C1F00] dark:text-white mb-5 transition-colors uppercase tracking-wider text-sm">Legal</h3>
-          <ul className="space-y-3 sm:space-y-4">
-            <li><button onClick={onOpenPrivacy} className="text-[#7B3F00]/80 hover:text-[#7B3F00] dark:text-[#d4a373]/80 dark:hover:text-[#e5b342] transition-colors font-medium">Privacy Policy</button></li>
-            <li><button onClick={onOpenTerms} className="text-[#7B3F00]/80 hover:text-[#7B3F00] dark:text-[#d4a373]/80 dark:hover:text-[#e5b342] transition-colors font-medium">Terms of Service</button></li>
-          </ul>
-        </div>
-      </div>
-
-      <div className="pt-8 border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 flex flex-col md:flex-row justify-between items-center gap-4">
-        <p className="text-[#7B3F00]/60 dark:text-[#d4a373]/60 font-medium text-sm text-center md:text-left transition-colors">© {new Date().getFullYear()} ChocoShare. All rights reserved.</p>
-        <p className="text-[#7B3F00]/60 dark:text-[#d4a373]/60 font-medium text-sm flex items-center justify-center gap-1.5 transition-colors">
-          Engineered with <Heart className="w-4 h-4 text-red-500 fill-red-500 animate-pulse" /> by <span className="font-bold text-[#3C1F00] dark:text-white">Snahasish Dey</span>
-        </p>
-      </div>
-    </div>
-  </footer>
-);
-
 export default function App() {
   const isMaintenanceMode = import.meta.env.VITE_MAINTENANCE_MODE === 'true';
-  if (isMaintenanceMode) {
-    return <MaintenanceView />;
-  }
+  if (isMaintenanceMode) return <MaintenanceView />;
+  
   const [route, setRoute] = useState<string>('home'); 
   const [payloadToShare, setPayloadToShare] = useState<SharePayload | null>(null);
   const [receiverId, setReceiverId] = useState<string | null>(null);
   const [showReceiveModal, setShowReceiveModal] = useState<boolean>(false);
-  const [showPrivacyModal, setShowPrivacyModal] = useState<boolean>(false);
-  const [showTermsModal, setShowTermsModal] = useState<boolean>(false);
-  
   const [isDark, setIsDark] = useState<boolean>(false);
   const [lava, setLava] = useState({ active: false, x: 0, y: 0, type: 'dark' });
 
+  // Use new Storage Hook
+  const { history, addHistory, clearHistory, trustedDevices, addTrustedDevice } = useAppStorage();
+
   const handleToggleTheme = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = rect.left + rect.width / 2;
-    const y = rect.top + rect.height / 2;
+    const x = rect.left + rect.width / 2; const y = rect.top + rect.height / 2;
     const nextTheme = isDark ? 'light' : 'dark';
-
     setLava({ active: true, x, y, type: nextTheme });
-
     setTimeout(() => {
-      if (nextTheme === 'dark') {
-        document.documentElement.classList.add('dark');
-        setIsDark(true);
-      } else {
-        document.documentElement.classList.remove('dark');
-        setIsDark(false);
-      }
+      if (nextTheme === 'dark') { document.documentElement.classList.add('dark'); setIsDark(true); } 
+      else { document.documentElement.classList.remove('dark'); setIsDark(false); }
     }, 500);
-
-    setTimeout(() => {
-      setLava(prev => ({ ...prev, active: false }));
-    }, 1200);
+    setTimeout(() => { setLava(prev => ({ ...prev, active: false })); }, 1200);
   };
 
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
       if (hash.startsWith('#/receive/')) {
-        // 🔥 Automatically force the URL to uppercase to prevent case sensitivity issues!
         const id = hash.replace('#/receive/', '').toUpperCase();
         setReceiverId(id); setRoute('receive');
-      } else if (payloadToShare !== null) {
-        setRoute('send');
-      } else {
-        setRoute('home');
-      }
+      } else if (payloadToShare !== null) { setRoute('send'); } 
+      else { setRoute('home'); }
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange(); 
@@ -844,30 +725,21 @@ export default function App() {
 
   return (
     <div className={`min-h-screen bg-[#FFFDD0] dark:bg-[#110800] text-[#3C1F00] dark:text-white font-sans selection:bg-[#C68E17] selection:text-white flex flex-col relative overflow-x-hidden transition-colors ${!lava.active ? 'duration-500' : ''}`}>
-      
-      {/* --- LAVA ANIMATION OVERLAY --- */}
       <AnimatePresence>
         {lava.active && (
           <motion.div
             className={`fixed inset-0 z-[100] pointer-events-none ${lava.type === 'dark' ? 'bg-[#110800]' : 'bg-[#FFFDD0]'}`}
             initial={{ clipPath: `circle(0px at ${lava.x}px ${lava.y}px)`, opacity: 1 }}
-            animate={{ 
-              clipPath: `circle(3000px at ${lava.x}px ${lava.y}px)`, 
-              opacity: [1, 1, 0] 
-            }}
+            animate={{ clipPath: `circle(3000px at ${lava.x}px ${lava.y}px)`, opacity: [1, 1, 0] }}
             transition={{ duration: 1.2, times: [0, 0.5, 1], ease: "easeInOut" }}
           />
         )}
       </AnimatePresence>
-
       <BackgroundShapes />
       <ChocolateHeader />
 
       <header className="fixed top-0 left-0 w-full p-3 sm:p-6 flex items-center justify-between z-40 bg-gradient-to-b from-[#FFFDD0] dark:from-[#110800] to-transparent transition-colors">
-        
-        {/* --- LEFT: BRANDING --- */}
         <div className="flex items-center gap-2 sm:gap-3 cursor-pointer hover:opacity-80 transition-opacity min-w-0" onClick={() => window.location.hash = ''}>
-          {/* flex-shrink-0 prevents the logo from getting squished */}
           <div className="flex-shrink-0 flex items-center justify-center hover:rotate-3 transition-transform">
             <img src="/logo.png" alt="ChocoShare Logo" className="w-8 h-8 sm:w-14 sm:h-14 object-contain drop-shadow-md" />
           </div>
@@ -875,102 +747,33 @@ export default function App() {
             Choco<span className="text-[#7B3F00] dark:text-[#e5b342] transition-colors">share</span>
           </h1>
         </div>
-
-        {/* --- RIGHT: ICONS & BUTTONS --- */}
         <div className="flex items-center gap-1.5 sm:gap-4 flex-shrink-0">
-          
-          <a 
-            href="https://instagram.com/snahasish0915" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="w-8 h-8 sm:w-11 sm:h-11 bg-white dark:bg-[#2d1a0a] rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform border border-[#7B3F00]/10 dark:border-[#d4a373]/20 group"
-            aria-label="Follow on Instagram"
-          >
-            <Instagram className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 dark:text-pink-400 group-hover:scale-110 transition-transform" />
-          </a>
-
-          <a 
-            href="https://github.com/basic30" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="w-8 h-8 sm:w-11 sm:h-11 bg-white dark:bg-[#2d1a0a] rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform border border-[#7B3F00]/10 dark:border-[#d4a373]/20 group"
-          >
-            <Github className="w-4 h-4 sm:w-5 sm:h-5 text-gray-800 dark:text-gray-200 group-hover:scale-110 transition-transform" />
-          </a>
-
-          <button 
-            onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
-            className="hidden md:flex w-11 h-11 bg-white dark:bg-[#2d1a0a] rounded-full items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform border border-[#7B3F00]/10 dark:border-[#d4a373]/20 group"
-            title="How it works"
-          >
-            <Info className="w-5 h-5 text-[#7B3F00] dark:text-[#e5b342] group-hover:scale-110 transition-transform" />
+          <button onClick={handleToggleTheme} className="w-8 h-8 sm:w-11 sm:h-11 bg-white dark:bg-[#2d1a0a] rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform border border-[#7B3F00]/10 dark:border-[#d4a373]/20" aria-label="Toggle Theme">
+            <motion.div initial={false} animate={{ rotate: isDark ? 180 : 0 }} transition={{ duration: 0.5 }}>{isDark ? <Moon className="w-4 h-4 sm:w-5 sm:h-5 text-[#e5b342]" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-[#C68E17]" />}</motion.div>
           </button>
-          
-          <button 
-            onClick={handleToggleTheme} 
-            className="w-8 h-8 sm:w-11 sm:h-11 bg-white dark:bg-[#2d1a0a] rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform border border-[#7B3F00]/10 dark:border-[#d4a373]/20"
-            aria-label="Toggle Theme"
-          >
-            <motion.div initial={false} animate={{ rotate: isDark ? 180 : 0 }} transition={{ duration: 0.5 }}>
-              {isDark ? <Moon className="w-4 h-4 sm:w-5 sm:h-5 text-[#e5b342]" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-[#C68E17]" />}
-            </motion.div>
-          </button>
-
           <button onClick={() => setShowReceiveModal(true)} className="flex items-center gap-1.5 sm:gap-2 bg-[#7B3F00] dark:bg-[#e5b342] hover:bg-[#3C1F00] dark:hover:bg-[#c28415] text-white dark:text-[#1a0b00] px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-full font-bold shadow-lg transition-transform hover:scale-105 active:scale-95 text-xs sm:text-base">
-            <QrCode className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="hidden sm:inline">Receive</span>
+            <QrCode className="w-4 h-4 sm:w-5 sm:h-5" /> <span className="hidden sm:inline">Receive</span>
           </button>
-
         </div>
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-start p-4 sm:p-6 pt-24 md:pt-28 relative z-10 w-full">
         <AnimatePresence mode="wait">
-          {route === 'home' && <HomeView key="home" onShare={startSharing} />}
+          {route === 'home' && <HomeView key="home" onShare={startSharing} history={history} clearHistory={clearHistory} />}
           {route === 'send' && payloadToShare !== null && (
             <div className="w-full mt-8 sm:mt-16 mb-20 flex justify-center">
-              <SenderView key="send" payload={payloadToShare} onCancel={cancelSharing} />
+              <SenderView key="send" payload={payloadToShare} onCancel={cancelSharing} addHistory={addHistory} />
             </div>
           )}
           {route === 'receive' && receiverId && (
             <div className="w-full mt-8 sm:mt-16 mb-20 flex justify-center">
-               <ReceiverView key={`receive-${receiverId}`} senderId={receiverId} />
+               <ReceiverView key={`receive-${receiverId}`} senderId={receiverId} addHistory={addHistory} trustedDevices={trustedDevices} addTrustedDevice={addTrustedDevice} />
             </div>
           )}
         </AnimatePresence>
       </main>
-
-      {/* FOOTER PASSES CLICKS TO OPEN MODALS */}
-      <Footer 
-        onOpenPrivacy={() => setShowPrivacyModal(true)} 
-        onOpenTerms={() => setShowTermsModal(true)} 
-      />
-
-      <ReceiveModal isOpen={showReceiveModal} onClose={() => setShowReceiveModal(false)} />
-
-      {/* PRIVACY POLICY MODAL TEXT */}
-      <LegalModal isOpen={showPrivacyModal} onClose={() => setShowPrivacyModal(false)} title="Privacy Policy">
-        <p className="font-bold text-[#3C1F00] dark:text-white text-lg">Your data is yours.</p>
-        <p>Because ChocoShare is built on Peer-to-Peer (P2P) WebRTC technology, absolute privacy is fundamentally engineered into the core of our application.</p>
-        <ul className="list-disc pl-5 space-y-2 mt-4">
-          <li><strong className="text-[#3C1F00] dark:text-white">No Server Storage:</strong> We do not store, host, or read your files or text messages. Your data goes directly from your device to the receiver's device.</li>
-          <li><strong className="text-[#3C1F00] dark:text-white">End-to-End Encryption:</strong> All transfers are heavily encrypted in transit by standard WebRTC security protocols (DTLS/SRTP).</li>
-          <li><strong className="text-[#3C1F00] dark:text-white">Routing Data:</strong> We use STUN/TURN servers strictly to help devices find each other across firewalls. These relay servers securely pass the encrypted data chunks without decrypting or logging them.</li>
-          <li><strong className="text-[#3C1F00] dark:text-white">No Tracking:</strong> We do not use invasive tracking cookies, and we do not collect personal IP addresses for analytics.</li>
-        </ul>
-      </LegalModal>
-
-      {/* TERMS OF SERVICE MODAL TEXT */}
-      <LegalModal isOpen={showTermsModal} onClose={() => setShowTermsModal(false)} title="Terms of Service">
-        <p>By using ChocoShare, you agree to the following terms:</p>
-        <ul className="list-disc pl-5 space-y-3 mt-4">
-          <li><strong className="text-[#3C1F00] dark:text-white">Acceptable Use:</strong> You agree not to use this service to transfer illegal, malicious, or harmful files.</li>
-          <li><strong className="text-[#3C1F00] dark:text-white">User Responsibility:</strong> Because transfers are direct and encrypted, ChocoShare cannot monitor or moderate content. You are entirely responsible for the files and text you choose to send or receive.</li>
-          <li><strong className="text-[#3C1F00] dark:text-white">No Warranty:</strong> ChocoShare is a free tool provided "as is" without warranties of any kind. We are not liable for interrupted transfers, data loss, or network limitations.</li>
-          <li><strong className="text-[#3C1F00] dark:text-white">Fair Use:</strong> While there are no hard file size limits, users must respect the fair use of our free TURN relay servers to ensure the service remains fast for everyone.</li>
-        </ul>
-      </LegalModal>
       
+      <ReceiveModal isOpen={showReceiveModal} onClose={() => setShowReceiveModal(false)} trustedDevices={trustedDevices} />
     </div>
   );
 }
