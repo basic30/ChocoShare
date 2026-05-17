@@ -202,6 +202,54 @@ const MaintenanceView = () => (
   </div>
 );
 
+const UpdateModal = () => {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    // Set your expiration date here (e.g., 10 days from today)
+    const expiryDate = new Date('2026-05-30T23:59:59').getTime();
+    const now = Date.now();
+    const hasSeenUpdate = localStorage.getItem('chocoshare_update_v2_seen');
+
+    if (now < expiryDate && !hasSeenUpdate) {
+      // Small delay so it pops up smoothly after the app loads
+      const timer = setTimeout(() => setIsVisible(true), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  const handleDismiss = () => {
+    localStorage.setItem('chocoshare_update_v2_seen', 'true');
+    setIsVisible(false);
+  };
+
+  if (!isVisible) return null;
+
+  return (
+    <div className="fixed inset-0 bg-[#3C1F00]/60 dark:bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-white dark:bg-[#2d1a0a] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-[#C68E17]/30 dark:border-[#e5b342]/30 relative">
+        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-[#C68E17] to-[#7B3F00] dark:from-[#e5b342] dark:to-[#c28415]"></div>
+        
+        <div className="p-8 text-center">
+          <div className="w-16 h-16 bg-[#FFFDD0] dark:bg-[#1a0b00] rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner border border-[#C68E17]/20">
+            <Zap className="w-8 h-8 text-[#C68E17] dark:text-[#e5b342] animate-pulse" />
+          </div>
+          
+          <h3 className="text-2xl font-black text-[#3C1F00] dark:text-white mb-3">Massive Speed Boost! 🚀</h3>
+          
+          <p className="text-[#7B3F00]/80 dark:text-[#d4a373]/90 font-medium leading-relaxed mb-8">
+            We’ve completely overhauled our connection engine. Thanks to our new global enterprise-grade routing, devices now connect almost instantly—even across strict mobile networks and firewalls. Drop a file and experience the lightning-fast difference today! 🍫⚡
+          </p>
+          
+          <button onClick={handleDismiss} className="w-full py-4 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] dark:hover:bg-[#c28415] text-white dark:text-[#1a0b00] font-bold rounded-xl transition-transform hover:scale-105 active:scale-95 shadow-lg">
+            Awesome, Got it!
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => {
   const [activeTab, setActiveTab] = useState<'files' | 'text'>('files');
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -863,7 +911,8 @@ export default function App() {
 
   return (
     <div className={`min-h-screen bg-[#FFFDD0] dark:bg-[#110800] text-[#3C1F00] dark:text-white font-sans selection:bg-[#C68E17] selection:text-white flex flex-col relative overflow-x-hidden transition-colors ${!lava.active ? 'duration-500' : ''}`}>
-      
+
+      <UpdateModal />
       {/* --- LAVA ANIMATION OVERLAY --- */}
       <AnimatePresence>
         {lava.active && (
