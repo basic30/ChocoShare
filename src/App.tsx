@@ -132,7 +132,7 @@ const useTransferSpeed = () => {
   return { speed, eta, updateSpeed, resetSpeed };
 };
 
-// --- PARTICLE BACKGROUND ---
+// --- PARTICLE & BLURRED CHOCOLATE BACKGROUND ---
 const ParticleBackground = () => {
   const particles = useMemo(() => {
     return Array.from({ length: 14 }, (_, i) => ({
@@ -148,31 +148,33 @@ const ParticleBackground = () => {
 
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-      {/* Large gradient orbs */}
+      
+      {/* Dark Chocolate Blob (Moved down to 25% and softened) */}
       <motion.div 
-        animate={{ x: [0, 60, -30, 0], y: [0, -40, 20, 0], scale: [1, 1.2, 0.9, 1] }} 
-        transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }} 
-        className="absolute top-[10%] left-[5%] w-[400px] h-[400px] rounded-full blur-[100px] opacity-[0.07]"
-        style={{ background: 'radial-gradient(circle, #C68E17, transparent 70%)' }}
+        animate={{ scale: [1, 1.1, 1], x: [0, 20, 0] }}
+        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute top-[25%] left-[-10%] w-[400px] h-[400px] bg-[#5B2E15] rounded-full blur-[100px] opacity-30 dark:opacity-15" 
       />
+      
+      {/* Milk Chocolate Blob (Middle Right) */}
       <motion.div 
-        animate={{ x: [0, -50, 30, 0], y: [0, 50, -30, 0], scale: [1, 0.85, 1.15, 1] }} 
-        transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }} 
-        className="absolute bottom-[5%] right-[5%] w-[500px] h-[500px] rounded-full blur-[120px] opacity-[0.06]"
-        style={{ background: 'radial-gradient(circle, #7B3F00, transparent 70%)' }}
+        animate={{ scale: [1, 1.15, 1], x: [0, -30, 0] }}
+        transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute top-[15%] right-[-10%] w-[500px] h-[500px] bg-[#7B3F00] rounded-full blur-[100px] opacity-40 dark:opacity-20" 
       />
+      
+      {/* Caramel / Light Chocolate Blob (Bottom Left) */}
       <motion.div 
-        animate={{ x: [0, 30, -20, 0], y: [0, -30, 40, 0] }} 
-        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }} 
-        className="absolute top-[50%] left-[50%] w-[350px] h-[350px] rounded-full blur-[100px] opacity-[0.04]"
-        style={{ background: 'radial-gradient(circle, #d4a373, transparent 70%)' }}
+        animate={{ scale: [1, 1.1, 1], y: [0, -30, 0] }}
+        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute bottom-[-10%] left-[10%] w-[600px] h-[600px] bg-[#D2691E] rounded-[40%_60%_70%_30%] blur-[110px] opacity-35 dark:opacity-20" 
       />
 
-      {/* Floating particles */}
+      {/* --- FLOATING PARTICLES --- */}
       {particles.map((p) => (
         <motion.div
           key={p.id}
-          className="particle"
+          className="particle absolute"
           style={{
             width: p.size,
             height: p.size,
@@ -656,12 +658,12 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
   };
 
   return (
-    <div className="w-full flex flex-col items-center pb-20">
+    <div className="w-full flex flex-col items-center pb-20 md:pb-32">
       <motion.div 
         initial={{ opacity: 0, y: 40, scale: 0.95 }} 
         animate={{ opacity: 1, y: 0, scale: 1 }} 
         transition={{ type: "spring", bounce: 0.35, duration: 0.9 }} 
-        className="w-full max-w-xl mx-auto mt-4 sm:mt-8 glass-card-strong rounded-3xl p-6 md:p-8 transition-colors"
+        className="w-full max-w-xl mx-auto mt-10 glass-card-strong rounded-3xl p-5 md:p-6 transition-colors"
       >
         <div className="text-center mb-6">
           <motion.div 
@@ -1490,7 +1492,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-start p-4 sm:p-6 pt-24 md:pt-28 relative z-10 w-full">
+      <main className="flex-1 flex flex-col items-center justify-start p-4 sm:p-6 pt-20 relative z-10 w-full min-h-[calc(100vh-120px)]">
         <AnimatePresence mode="wait">
           {route === 'home' && <HomeView key="home" onShare={startSharing} />}
           {route === 'send' && payloadToShare !== null && (
