@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Peer, DataConnection } from 'peerjs';
+import { io } from 'socket.io-client';
 import { 
   UploadCloud, Copy, CheckCircle2, AlertCircle, Loader2, Download, 
-  Wifi, FileBox, X, Share2, QrCode, Lock, Zap, Infinity, ArrowRight, Moon, Sun, Type, FileUp, MessageSquare, Instagram, Github, Info, Heart, Mail, Wrench,
-  Clock, Trash2, FolderOpen, ChevronRight, Signal, SignalHigh, SignalLow, WifiOff, History, FolderUp, File as FileIcon
+  Wifi, FileBox, X, Share2, QrCode, Lock, Zap, Infinity as InfinityIcon, ArrowRight, Moon, Sun, Type, FileUp, MessageSquare, Instagram, Github, Info, Heart, Mail, Wrench,
+  Clock, Trash2, FolderOpen, Signal, SignalHigh, SignalLow, WifiOff, History, FolderUp, File as FileIcon
 } from 'lucide-react';
+
+const socket = io('https://chocoshare-chocoshare-signaling.hf.space');
 
 // --- TYPES ---
 type SharePayload = { type: 'files'; data: File[] } | { type: 'text'; data: string };
@@ -149,21 +151,21 @@ const ParticleBackground = () => {
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
       
-      {/* Dark Chocolate Blob (Moved down to 25% and softened) */}
+      {/* Dark Chocolate Blob */}
       <motion.div 
         animate={{ scale: [1, 1.1, 1], x: [0, 20, 0] }}
         transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
         className="absolute top-[25%] left-[-10%] w-[400px] h-[400px] bg-[#5B2E15] rounded-full blur-[100px] opacity-30 dark:opacity-15" 
       />
       
-      {/* Milk Chocolate Blob (Middle Right) */}
+      {/* Milk Chocolate Blob */}
       <motion.div 
         animate={{ scale: [1, 1.15, 1], x: [0, -30, 0] }}
         transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
         className="absolute top-[15%] right-[-10%] w-[500px] h-[500px] bg-[#7B3F00] rounded-full blur-[100px] opacity-40 dark:opacity-20" 
       />
       
-      {/* Caramel / Light Chocolate Blob (Bottom Left) */}
+      {/* Caramel / Light Chocolate Blob */}
       <motion.div 
         animate={{ scale: [1, 1.1, 1], y: [0, -30, 0] }}
         transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
@@ -224,7 +226,6 @@ const ProgressBar = ({ progress, statusText, speed = 0, eta = Infinity }: { prog
         animate={{ width: `${progress}%` }} 
         transition={{ ease: "linear", duration: 0.2 }}
       >
-        {/* Shimmer overlay */}
         <div className="absolute inset-0 shimmer" />
       </motion.div>
     </div>
@@ -238,7 +239,7 @@ const ProgressBar = ({ progress, statusText, speed = 0, eta = Infinity }: { prog
 );
 
 // --- CONNECTION STATUS BADGE ---
-const ConnectionBadge = ({ conn }: { conn: DataConnection }) => {
+const ConnectionBadge = ({ conn }: { conn: any }) => {
   const [quality, setQuality] = useState<ConnectionQuality>('checking');
 
   useEffect(() => {
@@ -259,7 +260,6 @@ const ConnectionBadge = ({ conn }: { conn: DataConnection }) => {
         stats.forEach((report: any) => {
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
             foundPair = true;
-            // Check local candidate type
             const localCandidate = stats.get(report.localCandidateId);
             if (localCandidate && localCandidate.candidateType === 'relay') {
               isRelay = true;
@@ -271,12 +271,10 @@ const ConnectionBadge = ({ conn }: { conn: DataConnection }) => {
           setQuality(isRelay ? 'relay' : 'direct');
         }
       } catch {
-        // Stats API not available, just show as direct
-        if (conn.open) setQuality('direct');
+        if (conn.readyState === 'open') setQuality('direct');
       }
     };
 
-    // Initial delay before first check
     const timeout = setTimeout(() => {
       checkConnection();
       interval = setInterval(checkConnection, 3000);
@@ -326,7 +324,6 @@ const TransferHistoryPanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
   return (
     <>
-      {/* Backdrop */}
       <AnimatePresence>
         {isOpen && (
           <motion.div 
@@ -339,7 +336,6 @@ const TransferHistoryPanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
         )}
       </AnimatePresence>
 
-      {/* Panel */}
       <AnimatePresence>
         {isOpen && (
           <motion.div 
@@ -349,7 +345,6 @@ const TransferHistoryPanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
             transition={{ type: "spring", damping: 25, stiffness: 250 }}
             className="fixed top-0 right-0 h-full w-full max-w-md glass-card-strong z-[56] flex flex-col overflow-hidden"
           >
-            {/* Header */}
             <div className="p-6 border-b border-[#7B3F00]/10 dark:border-[#d4a373]/10 flex items-center justify-between shrink-0">
               <h3 className="text-xl font-display font-bold text-[#3C1F00] dark:text-white flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-[#C68E17]/10 dark:bg-[#e5b342]/10 flex items-center justify-center">
@@ -362,7 +357,6 @@ const TransferHistoryPanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
               </button>
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
               {history.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center px-6">
@@ -417,7 +411,6 @@ const TransferHistoryPanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
               )}
             </div>
 
-            {/* Footer */}
             {history.length > 0 && (
               <div className="p-4 border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 shrink-0">
                 <button 
@@ -560,7 +553,6 @@ const UpdateModal = () => {
 
 // --- FOLDER TREE PREVIEW ---
 const FolderTreePreview = ({ files }: { files: File[] }) => {
-  // Build a simple folder tree from webkitRelativePath
   const tree = useMemo(() => {
     const folders: Record<string, { name: string; size: number; files: string[] }> = {};
     let rootFiles: { name: string; size: number }[] = [];
@@ -802,7 +794,7 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
           </motion.p>
         </div>
         <div className="grid md:grid-cols-3 gap-8 text-left">
-          <FeatureCard icon={<Infinity className="w-8 h-8" />} title="No Size Limits" desc="Because data goes directly from your device to theirs, there are no cloud storage limits. Send 10MB or 100GB seamlessly." delay={0} />
+          <FeatureCard icon={<InfinityIcon className="w-8 h-8" />} title="No Size Limits" desc="Because data goes directly from your device to theirs, there are no cloud storage limits. Send 10MB or 100GB seamlessly." delay={0} />
           <FeatureCard icon={<Lock className="w-8 h-8" />} title="End-to-End Encrypted" desc="Your data is heavily encrypted during transit. Since it never passes through a central server, no one else can read it." delay={0.1} />
           <FeatureCard icon={<Zap className="w-8 h-8" />} title="Lightning Fast" desc="Data takes the absolute shortest path. If both devices are on the same WiFi network, files transfer at local network speeds." delay={0.2} />
         </div>
@@ -812,12 +804,23 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
 };
 
 // --- INDIVIDUAL TRANSFER TASK ---
-const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: SharePayload }) => {
+const TransferTask = ({ conn, payload }: { conn: any, payload: SharePayload }) => {
   const [status, setStatus] = useState<string>('connecting'); 
   const [progress, setProgress] = useState<number>(0);
   const [fileProgress, setFileProgress] = useState({ current: 0, total: payload.type === 'files' ? payload.data.length : 1 });
   const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed();
   const savedRef = useRef(false);
+
+  // Helper to send data natively
+  const sendData = (data: any) => {
+    if (conn.readyState === 'open') {
+      if (data instanceof ArrayBuffer || data instanceof Blob) {
+        conn.send(data);
+      } else {
+        conn.send(JSON.stringify(data));
+      }
+    }
+  };
 
   useEffect(() => {
     let currentIndex = 0;
@@ -826,37 +829,39 @@ const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: ShareP
 
     const sendInitialData = () => {
       if (payload.type === 'text') {
-        conn.send({ type: 'text_message', data: payload.data });
+        sendData({ type: 'text_message', data: payload.data });
         setStatus('complete');
       } else {
         const files = payload.data;
         if (currentIndex >= files.length) {
-          setStatus('complete'); conn.send({ type: 'all_done' }); return;
+          setStatus('complete'); sendData({ type: 'all_done' }); return;
         }
         const file = files[currentIndex];
         setFileProgress({ current: currentIndex + 1, total: files.length });
         resetSpeed(); 
         lastUiUpdate = 0; 
-        conn.send({ type: 'metadata', name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
+        sendData({ type: 'metadata', name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
       }
     };
     
-    if (conn.open) sendInitialData();
-    else conn.on('open', () => sendInitialData());
+    if (conn.readyState === 'open') sendInitialData();
+    else conn.onopen = () => sendInitialData();
 
-    const CHUNK_SIZE = 256 * 1024; 
+    // Small chunk size for weak networks
+    const CHUNK_SIZE = 64 * 1024; 
     
     const sendNextChunk = async (file: File, offset: number) => {
-      if (offset >= file.size) { conn.send({ type: 'eof' }); return; }
+      if (offset >= file.size) { sendData({ type: 'eof' }); return; }
       
-      if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024 * 16) {
-        setTimeout(() => sendNextChunk(file, offset), 5); return; 
+      // Strict backpressure for instant ToffeeShare speeds
+      if (conn.bufferedAmount > 512 * 1024) {
+        setTimeout(() => sendNextChunk(file, offset), 10); return; 
       }
 
       const slice = file.slice(offset, offset + CHUNK_SIZE);
       const buffer = await slice.arrayBuffer(); 
       
-      conn.send(buffer);
+      sendData(buffer);
       const newOffset = offset + CHUNK_SIZE;
       
       if (newOffset - lastUiUpdate > 1024 * 1024 || newOffset >= file.size) {
@@ -867,7 +872,12 @@ const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: ShareP
       setTimeout(() => sendNextChunk(file, newOffset), 0); 
     };
 
-    conn.on('data', (data: any) => {
+    conn.onmessage = (event: MessageEvent) => {
+      let data;
+      try {
+        data = typeof event.data === 'string' ? JSON.parse(event.data) : { type: 'chunk' };
+      } catch { return; }
+
       if (data.type === 'request_metadata') {
         if (!isTransferring) sendInitialData();
       }
@@ -879,9 +889,9 @@ const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: ShareP
       else if (data.type === 'done' && payload.type === 'files') {
         currentIndex++; isTransferring = false; sendInitialData();
       }
-    });
+    };
     
-    conn.on('close', () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); });
+    conn.onclose = () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); };
   }, [conn, payload, resetSpeed, updateSpeed]); 
 
   // Save transfer record
@@ -897,7 +907,7 @@ const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: ShareP
         totalSize: payload.type === 'files' ? payload.data.reduce((acc, f) => acc + f.size, 0) : undefined,
         textPreview: payload.type === 'text' ? payload.data.substring(0, 50) : undefined,
         timestamp: Date.now(),
-        peerId: conn.peer.substring(0, 6).toUpperCase(),
+        peerId: 'GUEST',
         status: status as 'complete' | 'failed',
       });
     }
@@ -908,7 +918,7 @@ const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: ShareP
       <div className="flex justify-between items-center mb-1">
         <span className="font-bold text-[#3C1F00] dark:text-white text-sm flex items-center gap-2">
           {status === 'complete' ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : status === 'error' ? <X className="w-4 h-4 text-red-500" /> : <Loader2 className="w-4 h-4 animate-spin text-[#C68E17]" />}
-          Guest: {conn.peer.substring(0, 6).toUpperCase()}
+          Direct Transfer Active
         </span>
         <div className="flex items-center gap-2">
           {(status === 'transferring' || status === 'complete') && <ConnectionBadge conn={conn} />}
@@ -925,56 +935,69 @@ const TransferTask = ({ conn, payload }: { conn: DataConnection, payload: ShareP
 // --- SENDER VIEW ---
 const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () => void }) => {
   const [peerId, setPeerId] = useState<string | null>(null);
-  const [receivers, setReceivers] = useState<DataConnection[]>([]);
+  const [receivers, setReceivers] = useState<any[]>([]);
   const [copied, setCopied] = useState<boolean>(false);
-  
-  const peerRef = useRef<Peer | null>(null);
   const shareUrl = peerId ? `${window.location.origin}${window.location.pathname}#/receive/${peerId}` : '';
 
   useEffect(() => {
+    let pc: RTCPeerConnection;
+    const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    
     const initializeRoom = async () => {
       try {
         const res = await fetch('https://chocoshare-turn-auth.snahasishdey141.workers.dev/');
         const turnData = await res.json();
 
-        const dynamicConfig = {
-          config: {
-            iceServers: [
-              { urls: "stun:stun.l.google.com:19302" },
-              ...turnData.iceServers
-            ]
+        socket.emit('create-room', roomId);
+        setPeerId(roomId);
+
+        socket.on('peer-joined', async () => {
+          pc = new RTCPeerConnection({
+            iceServers: [ { urls: "stun:stun.l.google.com:19302" }, ...turnData.iceServers ],
+            iceCandidatePoolSize: 10
+          });
+
+          // Create the Data Channel natively
+          const dataChannel = pc.createDataChannel('chocoshare', { negotiated: false });
+          (dataChannel as any).peerConnection = pc; 
+          
+          dataChannel.onopen = () => {
+            setReceivers(prev => [...prev, dataChannel]);
+          };
+
+          // Send Trickle ICE
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              socket.emit('signal', { roomId, signal: { type: 'candidate', candidate: event.candidate } });
+            }
+          };
+
+          // Create the Offer
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit('signal', { roomId, signal: { type: 'offer', sdp: offer } });
+        });
+
+        // Handle the Receiver's Answer & ICE
+        socket.on('signal', async (signal) => {
+          if (signal.type === 'answer' && pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          } else if (signal.type === 'candidate' && pc) {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
           }
-        };
-
-        const id = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const peer = new Peer(id, dynamicConfig);
-        peerRef.current = peer;
-
-        peer.on('open', (id) => setPeerId(id));
-        
-        peer.on('connection', (conn) => {
-          conn.serialization = 'binary';
-          setReceivers(prev => [...prev, conn]);
         });
-        
-        peer.on('error', (err) => console.error(err));
+
       } catch (error) {
-        console.error("Failed to secure TURN credentials", error);
-        const id = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const peer = new Peer(id, { config: { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] } });
-        peerRef.current = peer;
-        peer.on('open', (id) => setPeerId(id));
-        peer.on('connection', (conn) => {
-          conn.serialization = 'binary';
-          setReceivers(prev => [...prev, conn]);
-        });
+        console.error("Connection failed", error);
       }
     };
 
     initializeRoom();
 
     return () => {
-      if (peerRef.current) peerRef.current.destroy();
+      socket.off('peer-joined');
+      socket.off('signal');
+      if (pc) pc.close();
     };
   }, []); 
 
@@ -1051,13 +1074,12 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
   const [receivedText, setReceivedText] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed(); 
-  const connRef = useRef<DataConnection | null>(null);
+  const connRef = useRef<any | null>(null);
   const savedRef = useRef(false);
 
   useEffect(() => {
     let activeUrls: string[] = []; 
-    let activePeer: Peer | null = null;
-    let handshakeInterval: any;
+    let pc: RTCPeerConnection;
     let allFilesMeta: { name: string; size: number }[] = [];
 
     const establishConnection = async () => {
@@ -1065,42 +1087,54 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
         const res = await fetch('https://chocoshare-turn-auth.snahasishdey141.workers.dev/');
         const turnData = await res.json();
         
-        const dynamicConfig = {
-          config: {
-            iceServers: [
-              { urls: "stun:stun.l.google.com:19302" },
-              ...turnData.iceServers
-            ]
+        pc = new RTCPeerConnection({
+          iceServers: [ { urls: "stun:stun.l.google.com:19302" }, ...turnData.iceServers ],
+          iceCandidatePoolSize: 10
+        });
+
+        socket.emit('join-room', senderId);
+
+        // Send Trickle ICE
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit('signal', { roomId: senderId, signal: { type: 'candidate', candidate: event.candidate } });
           }
         };
 
-        const peer = new Peer(dynamicConfig);
-        activePeer = peer;
+        // Handle Offer & ICE from Sender
+        socket.on('signal', async (signal) => {
+          if (signal.type === 'offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit('signal', { roomId: senderId, signal: { type: 'answer', sdp: answer } });
+          } else if (signal.type === 'candidate') {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          }
+        });
 
-        peer.on('open', () => {
-          const conn = peer.connect(senderId, { reliable: true, serialization: 'binary' });
+        // When the Data Channel arrives
+        pc.ondatachannel = (event) => {
+          const conn = event.channel;
+          conn.binaryType = 'arraybuffer'; // Crucial for receiving raw files
+          (conn as any).peerConnection = pc; // Hack to keep ConnectionBadge working
           connRef.current = conn;
+          
           let chunks: any[] = []; 
           let receivedSize = 0; 
           let fileMeta: any = null;
           let lastUiUpdate = 0;
 
-          conn.on('open', () => {
+          conn.onopen = () => {
             setStatus('connecting');
-            conn.send({ type: 'request_metadata' });
-            
-            handshakeInterval = setInterval(() => {
-              if (conn.open) {
-                conn.send({ type: 'request_metadata' });
-              }
-            }, 1000);
-          });
+            conn.send(JSON.stringify({ type: 'request_metadata' }));
+          };
 
-          conn.on('data', (data: any) => {
-            if (!data.type) {
-              chunks.push(data); 
-              const chunkSize = data.byteLength || data.size || data.length || 0;
-              receivedSize += chunkSize;
+          conn.onmessage = (e: MessageEvent) => {
+            if (typeof e.data !== 'string') {
+              // It's a raw file chunk
+              chunks.push(new Blob([e.data])); 
+              receivedSize += e.data.byteLength;
               
               if (receivedSize - lastUiUpdate > 1024 * 1024 || receivedSize >= fileMeta.size) {
                  setProgress(Math.min(100, (receivedSize / fileMeta.size) * 100));
@@ -1110,9 +1144,8 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
               return;
             }
 
-            if (data.type === 'metadata' || data.type === 'text_message') {
-              if (handshakeInterval) clearInterval(handshakeInterval);
-            }
+            // It's a JSON command
+            let data = JSON.parse(e.data);
 
             if (data.type === 'text_message') {
               setReceivedText(data.data);
@@ -1122,15 +1155,8 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
               fileMeta = data; setMetadata(data); chunks = []; receivedSize = 0; lastUiUpdate = 0; setProgress(0); setStatus('receiving'); 
               allFilesMeta.push({ name: data.name, size: data.size });
               resetSpeed(); 
-              conn.send({ type: 'ready' }); 
+              conn.send(JSON.stringify({ type: 'ready' })); 
             } 
-            else if (data.type === 'chunk') {
-               chunks.push(new Blob([data.data])); receivedSize += data.data.byteLength;
-               if (fileMeta) {
-                 setProgress((receivedSize / fileMeta.size) * 100);
-                 updateSpeed(receivedSize, fileMeta.size); 
-               }
-            }
             else if (data.type === 'eof') {
               const finalBlob = new Blob(chunks, { type: fileMeta.mime });
               const url = URL.createObjectURL(finalBlob);
@@ -1138,17 +1164,15 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
               
               const a = document.createElement('a');
               a.href = url; a.download = fileMeta.name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-              conn.send({ type: 'done' });
+              conn.send(JSON.stringify({ type: 'done' }));
             }
             else if (data.type === 'all_done') { setStatus('complete'); }
-          });
+          };
           
-          conn.on('close', () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); });
-        });
-        peer.on('error', (err) => { console.error(err); setStatus('error'); });
+          conn.onclose = () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); };
+        };
 
       } catch (error) {
-        console.error("Failed to secure TURN credentials", error);
         setStatus('error');
       }
     };
@@ -1156,9 +1180,9 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
     establishConnection();
     
     return () => { 
-      if (handshakeInterval) clearInterval(handshakeInterval);
+      socket.off('signal');
       activeUrls.forEach(url => URL.revokeObjectURL(url)); 
-      if (activePeer) activePeer.destroy(); 
+      if (pc) pc.close(); 
     };
   }, [senderId, resetSpeed, updateSpeed]); 
 
