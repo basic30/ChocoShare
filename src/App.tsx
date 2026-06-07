@@ -260,8 +260,15 @@ const ConnectionBadge = ({ conn }: { conn: any }) => {
         stats.forEach((report: any) => {
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
             foundPair = true;
+            
+            // Check BOTH local and remote candidates
             const localCandidate = stats.get(report.localCandidateId);
-            if (localCandidate && localCandidate.candidateType === 'relay') {
+            const remoteCandidate = stats.get(report.remoteCandidateId);
+            
+            if (
+              (localCandidate && localCandidate.candidateType === 'relay') ||
+              (remoteCandidate && remoteCandidate.candidateType === 'relay')
+            ) {
               isRelay = true;
             }
           }
@@ -847,28 +854,41 @@ const TransferTask = ({ conn, payload }: { conn: any, payload: SharePayload }) =
     if (conn.readyState === 'open') sendInitialData();
     else conn.onopen = () => sendInitialData();
 
-    // Small chunk size for weak networks
-    const CHUNK_SIZE = 64 * 1024; 
+    // ADAPTIVE CHUNKING ALGORITHM VARIABLES
+    let currentChunkSize = 64 * 1024; // Start safe at 64KB
+    const MAX_CHUNK_SIZE = 512 * 1024; // Cap at 512KB for gigabit speeds
+    const MIN_CHUNK_SIZE = 16 * 1024;  // Drop to 16KB for weak mobile connections
     
     const sendNextChunk = async (file: File, offset: number) => {
       if (offset >= file.size) { sendData({ type: 'eof' }); return; }
       
-      // Strict backpressure for instant ToffeeShare speeds
-      if (conn.bufferedAmount > 512 * 1024) {
-        setTimeout(() => sendNextChunk(file, offset), 10); return; 
+      const dc = conn.dataChannel;
+      
+      // Strict backpressure & Dynamic Sizing
+      if (dc && dc.bufferedAmount > 1024 * 1024) { 
+        // 🚨 Network is choking! Buffer is over 1MB. 
+        // Cut chunk size in half and pause briefly to let the network drain.
+        currentChunkSize = Math.max(MIN_CHUNK_SIZE, Math.floor(currentChunkSize / 2));
+        setTimeout(() => sendNextChunk(file, offset), 50); 
+        return; 
+      } else {
+        // 🚀 Network is healthy! Slowly ramp up the chunk size for maximum speed.
+        currentChunkSize = Math.min(MAX_CHUNK_SIZE, currentChunkSize + (16 * 1024));
       }
 
-      const slice = file.slice(offset, offset + CHUNK_SIZE);
+      const slice = file.slice(offset, offset + currentChunkSize);
       const buffer = await slice.arrayBuffer(); 
       
       sendData(buffer);
-      const newOffset = offset + CHUNK_SIZE;
+      const newOffset = offset + currentChunkSize;
       
       if (newOffset - lastUiUpdate > 1024 * 1024 || newOffset >= file.size) {
          setProgress(Math.min(100, (newOffset / file.size) * 100));
          lastUiUpdate = newOffset;
       }
       updateSpeed(newOffset, file.size);
+      
+      // Fire next chunk immediately
       setTimeout(() => sendNextChunk(file, newOffset), 0); 
     };
 
