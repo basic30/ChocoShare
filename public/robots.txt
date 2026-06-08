@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://chocoshare.vercel.app/sitemap.xml
+Sitemap: https://chocoshare.qzz.io/sitemap.xml
