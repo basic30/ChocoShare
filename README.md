@@ -4,6 +4,8 @@
 that allows users to send files directly between devices without
 uploading them to a server.
 
+ChocoShare - https://chocoshare.qzz.io
+
 Built with **React, Vite, TailwindCSS, and PeerJS**, ChocoShare uses
 **WebRTC** technology to transfer files directly between users, ensuring
 **privacy, speed, and no file size limits**.
