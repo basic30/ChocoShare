@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { X, Send, Image as ImageIcon, Mic, Square, Loader2, MessageSquare, Lock, Trash2, Smile, WifiOff } from 'lucide-react';
+import { X, Send, Image as ImageIcon, Mic, Square, Loader2, MessageSquare, Lock, Trash2, Smile, WifiOff, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Message {
@@ -43,33 +43,29 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   
+  // FIX: Global tracker for all generated Blob URLs to prevent memory leaks safely
+  const activeBlobUrlsRef = useRef<Set<string>>(new Set());
+  
   const chunkTrackerRef = useRef<Record<string, { type: 'text' | 'image', chunks: string[], count: number, timestamp: string }>>({});
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, partnerTyping, audioPreview]);
 
-  // FIX 1: STRICT SEPARATION OF CONCERNS
-  // WebRTC Cleanup ONLY on Component Unmount
+  // FIX: Centralized Cleanup. Only destroy URLs when the component completely unmounts.
   useEffect(() => {
     return () => {
-      console.log("[WebRTC] Component unmounting, tearing down connections.");
+      console.log("[WebRTC] Component unmounting, tearing down connections and memory.");
       if (dcRef.current) dcRef.current.close();
       if (pcRef.current) pcRef.current.close();
       if (socketRef.current) socketRef.current.disconnect();
       if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
+      
+      // Clean up all active blob URLs to prevent memory leaks
+      activeBlobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+      activeBlobUrlsRef.current.clear();
     };
-  }, []); // <-- Empty array is critical here
-
-  // Audio Preview Memory Management
-  useEffect(() => {
-    return () => {
-      if (audioPreview) {
-        console.log("[Audio] Cleaning up old audio blob URL.");
-        URL.revokeObjectURL(audioPreview.url);
-      }
-    };
-  }, [audioPreview]);
+  }, []);
 
   const getIceServers = async () => {
     try {
@@ -77,7 +73,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       const data = await res.json();
       return [{ urls: "stun:stun.l.google.com:19302" }, ...data.iceServers];
     } catch (e) {
-      console.error("[WebRTC] Failed to fetch TURN servers, falling back to STUN.", e);
+      console.error("[WebRTC] Failed to fetch TURN servers.", e);
       return [{ urls: "stun:stun.l.google.com:19302" }];
     }
   };
@@ -103,6 +99,8 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
             console.log(`[DataChannel] Assembled complete binary payload for ${binaryTracker.id}`);
             const blob = new Blob(binaryTracker.chunks, { type: binaryTracker.mime });
             const url = URL.createObjectURL(blob);
+            activeBlobUrlsRef.current.add(url); // Track for cleanup
+
             setMessages(prev => [...prev, { id: binaryTracker!.id, type: 'audio', content: url, sender: 'partner', timestamp: new Date(binaryTracker!.timestamp) }]);
             setPartnerTyping(false);
             binaryTracker = null;
@@ -115,7 +113,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
         const data = JSON.parse(event.data);
         
         if (data.type === 'msg_start_binary') {
-          console.log(`[DataChannel] Incoming binary transfer started: ${data.total} chunks.`);
           binaryTracker = { id: data.id, chunks: [], count: 0, total: data.total, timestamp: data.timestamp, mime: data.mimeType };
           return;
         }
@@ -157,10 +154,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
 
   const createPeerConnection = async (isCreator: boolean, targetId: string) => {
     try {
-      if (pcRef.current) {
-        console.log("[WebRTC] Closing existing PC for fresh rebuild.");
-        pcRef.current.close(); 
-      }
+      if (pcRef.current) pcRef.current.close(); 
       const iceServers = await getIceServers();
       const pc = new RTCPeerConnection({ iceServers });
       pcRef.current = pc;
@@ -172,18 +166,13 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
         }
       };
 
-      // FIX 2: TOLERANT ICE STATE MANAGEMENT
       pc.oniceconnectionstatechange = () => {
-        console.log(`[WebRTC] ICE Connection State changed to: ${pc.iceConnectionState}`);
-        
         if (pc.iceConnectionState === 'failed') {
-          console.error("[WebRTC] ICE Tunnel FAILED. Forcing deep reconnect.");
           setConnState('reconnecting');
           if (isCreator && activeCodeRef.current) setTimeout(() => { if (pcRef.current === pc) initiateOffer(activeCodeRef.current!); }, 1500);
         } 
         else if (pc.iceConnectionState === 'disconnected') {
-          console.warn("[WebRTC] ICE Tunnel DISCONNECTED. Awaiting recovery (not rebuilding yet).");
-          setConnState('reconnecting'); // Update UI only, let WebRTC try to heal
+          setConnState('reconnecting');
         } 
         else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
           setConnState('connected');
@@ -200,15 +189,12 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     try {
       setStatus('Securing P2P connection...');
       const pc = await createPeerConnection(true, targetId);
-      const dc = pc.createDataChannel('secure_chat', { negotiated: false }); // Explicit options
+      const dc = pc.createDataChannel('secure_chat', { negotiated: false }); 
       setupDataChannel(dc);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socketRef.current?.emit('signal', { roomId: targetId, signal: { type: 'offer', sdp: offer } });
-      console.log("[WebRTC] Offer generated and sent.");
-    } catch (e) {
-      console.error("[WebRTC] Negotiation offer failed", e);
-    }
+    } catch (e) { console.error("[WebRTC] Negotiation offer failed", e); }
   };
 
   const handleIncomingOffer = async (sdp: any, targetId: string) => {
@@ -222,19 +208,13 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socketRef.current?.emit('signal', { roomId: targetId, signal: { type: 'answer', sdp: answer } });
-      console.log("[WebRTC] Answer generated and sent.");
-    } catch (e) {
-      console.error("[WebRTC] Negotiation answer failed", e);
-    }
+    } catch (e) { console.error("[WebRTC] Negotiation answer failed", e); }
   };
 
   const setupSocket = (role: 'creator' | 'joiner', code: string) => {
     if (!socketRef.current) socketRef.current = io('https://chocoshare-chocoshare-signaling.hf.space');
     const socket = socketRef.current;
     
-    socket.on('connect', () => console.log("[Socket] Connected to signaling server."));
-    socket.on('disconnect', () => console.warn("[Socket] Disconnected from signaling server."));
-
     socket.on('peer-joined', () => { if (activeRoleRef.current === 'creator' && activeCodeRef.current) initiateOffer(activeCodeRef.current); });
     socket.on('signal', async (signal) => {
       const targetId = activeCodeRef.current;
@@ -246,7 +226,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
         candidateQueueRef.current = [];
       }
       else if (signal.type === 'candidate') {
-        if (pcRef.current && pcRef.current.remoteDescription) { try { await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate)); } catch(e){ console.error("[WebRTC] ICE candidate error", e); } } 
+        if (pcRef.current && pcRef.current.remoteDescription) { try { await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate)); } catch(e){} } 
         else { candidateQueueRef.current.push(signal.candidate); }
       }
     });
@@ -255,18 +235,15 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log("[App] Foreground detected. Auditing connection states.");
         const role = activeRoleRef.current;
         const targetId = activeCodeRef.current;
         if (targetId && socketRef.current) {
           if (!socketRef.current.connected) { 
-            console.log("[Socket] Restoring broken socket connection.");
             socketRef.current.connect(); 
             socketRef.current.emit('join-room', targetId); 
           }
           const state = pcRef.current?.iceConnectionState;
           if (role === 'creator' && (state === 'failed' || state === 'closed')) { 
-            console.log("[WebRTC] Detected dead tunnel on resume. Re-initiating.");
             setConnState('reconnecting'); initiateOffer(targetId); 
           }
         }
@@ -289,12 +266,9 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     setupSocket('joiner', joinId); socketRef.current?.emit('join-room', joinId);
   };
 
-  // FIX 3: BULLETPROOF DATACHANNEL SENDING
   const sendMessage = async (type: 'text' | 'image', content: string) => {
-    if (!dcRef.current || dcRef.current.readyState !== 'open' || !content) {
-      console.warn("[DataChannel] Denied send request: Channel not open.");
-      return;
-    }
+    if (!dcRef.current || dcRef.current.readyState !== 'open' || !content) return;
+    
     const msgId = Math.random().toString(36).substr(2, 9);
     const timestamp = new Date();
     
@@ -310,42 +284,36 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       if (totalChunks > 0) {
         for (let i = 0; i < totalChunks; i++) {
           if (!dcRef.current || dcRef.current.readyState !== 'open') break;
-          
-          // Strict Backpressure handling
           while (dcRef.current && dcRef.current.bufferedAmount > 65535) {
             await new Promise(resolve => setTimeout(resolve, 50));
-            // Crucial: check status again after sleeping
-            if (dcRef.current?.readyState !== 'open') throw new Error("Channel closed during buffer wait.");
+            if (dcRef.current?.readyState !== 'open') throw new Error("Channel closed");
           }
-          
           dcRef.current.send(JSON.stringify({ type: 'msg_chunk', id: msgId, index: i, chunk: content.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) }));
           await new Promise(resolve => setTimeout(resolve, 2));
         }
       }
-      console.log(`[DataChannel] Successfully transmitted ${type} message.`);
-    } catch (e) {
-      console.error(`[DataChannel] Transmission aborted for ${type}`, e);
-    }
+    } catch (e) { console.error(`[DataChannel] Transmission aborted`, e); }
   };
 
   const sendAudioBinary = async () => {
-    if (!audioPreview || !dcRef.current || dcRef.current.readyState !== 'open') {
-       console.warn("[DataChannel] Denied audio send request.");
-       return;
-    }
+    if (!audioPreview || !dcRef.current || dcRef.current.readyState !== 'open') return;
     
     try {
       const blob = audioPreview.blob;
       const msgId = Math.random().toString(36).substr(2, 9);
       const timestamp = new Date();
 
-      setMessages(prev => [...prev, { id: msgId, type: 'audio', content: audioPreview.url, sender: 'me', timestamp }]);
+      // FIX: Generate a FRESH url for the chat history that won't be killed when preview closes
+      const historyUrl = URL.createObjectURL(blob);
+      activeBlobUrlsRef.current.add(historyUrl);
+
+      setMessages(prev => [...prev, { id: msgId, type: 'audio', content: historyUrl, sender: 'me', timestamp }]);
+      
+      // We can now safely clear the preview UI
       setAudioPreview(null);
 
-      const CHUNK_SIZE = 8192; // Slightly larger for binary to reduce overhead
+      const CHUNK_SIZE = 8192; 
       const totalChunks = Math.ceil(blob.size / CHUNK_SIZE);
-
-      console.log(`[Audio] Initiating binary transfer. Size: ${blob.size} bytes over ${totalChunks} chunks.`);
 
       dcRef.current.send(JSON.stringify({
         type: 'msg_start_binary', id: msgId, msgType: 'audio', total: totalChunks, timestamp: timestamp.toISOString(), mimeType: blob.type
@@ -353,10 +321,9 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
 
       for (let i = 0; i < totalChunks; i++) {
         if (!dcRef.current || dcRef.current.readyState !== 'open') break;
-        
         while (dcRef.current && dcRef.current.bufferedAmount > 65535) {
            await new Promise(resolve => setTimeout(resolve, 20));
-           if (dcRef.current?.readyState !== 'open') throw new Error("Channel closed during binary buffer wait.");
+           if (dcRef.current?.readyState !== 'open') throw new Error("Channel closed");
         }
         
         const chunkBlob = blob.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
@@ -365,10 +332,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
         
         if (i % 5 === 0) await new Promise(resolve => setTimeout(resolve, 2));
       }
-      console.log("[Audio] Binary transfer complete.");
-    } catch (e) {
-      console.error("[Audio] Binary transmission aborted.", e);
-    }
+    } catch (e) { console.error("[Audio] Binary transmission aborted.", e); }
   };
 
   const handleTyping = (status: boolean) => {
@@ -410,7 +374,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
 
   const startRecording = async () => {
     try {
-      console.log("[Audio] Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
       const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 12000 } : undefined;
       const mediaRecorder = new MediaRecorder(stream, options);
@@ -419,32 +382,27 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
 
       mediaRecorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       mediaRecorder.onstop = () => {
-        console.log("[Audio] Recording stopped. Processing tracks.");
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        setAudioPreview({ blob: audioBlob, url: URL.createObjectURL(audioBlob) });
-        // Cleanly stop hardware tracks without triggering an OS route rebuild
-        stream.getTracks().forEach(track => {
-           track.stop();
-           track.enabled = false;
-        });
+        const url = URL.createObjectURL(audioBlob);
+        activeBlobUrlsRef.current.add(url); // Track for cleanup
+        setAudioPreview({ blob: audioBlob, url });
+        
+        stream.getTracks().forEach(track => { track.stop(); track.enabled = false; });
         if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
       };
       
       mediaRecorder.start();
       setIsRecording(true);
-      console.log("[Audio] Recording started.");
 
       recordingTimeoutRef.current = setTimeout(() => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-           console.log("[Audio] Max duration reached. Auto-stopping.");
            mediaRecorderRef.current.stop();
            setIsRecording(false);
         }
       }, 10000);
 
     } catch (err) { 
-      console.error('[Audio] Mic access denied or failed', err); 
-      alert("Microphone access is required to send voice notes.");
+      console.error('[Audio] Mic access denied', err); 
     }
   };
 
@@ -456,7 +414,10 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   };
   
   const cancelRecording = () => { 
-    if (audioPreview) URL.revokeObjectURL(audioPreview.url); 
+    if (audioPreview) {
+      URL.revokeObjectURL(audioPreview.url); 
+      activeBlobUrlsRef.current.delete(audioPreview.url);
+    }
     setAudioPreview(null); 
   };
   
