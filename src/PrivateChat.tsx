@@ -111,11 +111,21 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       socket.emit('signal', { roomId: code, signal: { type: 'offer', sdp: offer } });
     });
 
+    let candidateQueue: RTCIceCandidateInit[] = [];
     socket.on('signal', async (signal) => {
       if (signal.type === 'answer' && pcRef.current) {
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        // Flush queue
+        for (const c of candidateQueue) {
+          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
+        }
+        candidateQueue = [];
       } else if (signal.type === 'candidate' && pcRef.current) {
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        if (pcRef.current.remoteDescription) {
+          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate)); } catch (e) {}
+        } else {
+          candidateQueue.push(signal.candidate);
+        }
       }
     });
   };
@@ -128,27 +138,40 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     const socket = io('https://chocoshare-chocoshare-signaling.hf.space');
     socketRef.current = socket;
 
+    // Instantiate PC *before* joining to ensure no packets are missed
+    const iceServers = await getIceServers();
+    const pc = new RTCPeerConnection({ iceServers });
+    pcRef.current = pc;
+
+    pc.ondatachannel = (e) => setupDataChannel(e.channel);
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) socket.emit('signal', { roomId: joinId, signal: { type: 'candidate', candidate: e.candidate } });
+    };
+
     socket.emit('join-room', joinId);
 
+    let candidateQueue: RTCIceCandidateInit[] = [];
     socket.on('signal', async (signal) => {
       if (signal.type === 'offer') {
         setStatus('Securing P2P connection...');
-        const iceServers = await getIceServers();
-        const pc = new RTCPeerConnection({ iceServers });
-        pcRef.current = pc;
-
-        pc.ondatachannel = (e) => setupDataChannel(e.channel);
-
-        pc.onicecandidate = (e) => {
-          if (e.candidate) socket.emit('signal', { roomId: joinId, signal: { type: 'candidate', candidate: e.candidate } });
-        };
-
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        
+        // Flush queue
+        for (const c of candidateQueue) {
+          try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
+        }
+        candidateQueue = [];
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('signal', { roomId: joinId, signal: { type: 'answer', sdp: answer } });
-      } else if (signal.type === 'candidate' && pcRef.current) {
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      } else if (signal.type === 'candidate') {
+        if (pc.remoteDescription) {
+          try { await pc.addIceCandidate(new RTCIceCandidate(signal.candidate)); } catch (e) {}
+        } else {
+          candidateQueue.push(signal.candidate);
+        }
       }
     });
   };
@@ -259,10 +282,20 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
                 <div className="flex-grow border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10"></div>
               </div>
 
-              <div className="flex gap-2">
-                <input type="text" maxLength={6} placeholder="6-Digit Code" value={joinId} onChange={(e) => setJoinId(e.target.value.replace(/\D/g, ''))}
-                  className="flex-1 glass-input rounded-xl px-4 py-3 text-center text-xl tracking-widest font-bold text-[#3C1F00] dark:text-white focus:outline-none" />
-                <button onClick={handleJoinRoom} className="px-6 py-3 bg-[#7B3F00] dark:bg-[#d4a373] hover:bg-[#3C1F00] dark:hover:bg-[#e5b342] text-white dark:text-[#120601] font-bold rounded-xl transition-colors">
+              {/* FIXED: Added flex-col on small screens so the button doesn't get pushed off */}
+              <div className="flex flex-col sm:flex-row gap-3 w-full">
+                <input 
+                  type="text" 
+                  maxLength={6} 
+                  placeholder="6-Digit Code" 
+                  value={joinId} 
+                  onChange={(e) => setJoinId(e.target.value.replace(/\D/g, ''))}
+                  className="w-full sm:flex-1 glass-input rounded-xl px-4 py-3 text-center text-xl tracking-widest font-bold text-[#3C1F00] dark:text-white focus:outline-none min-w-0" 
+                />
+                <button 
+                  onClick={handleJoinRoom} 
+                  className="w-full sm:w-auto px-8 py-3 bg-[#7B3F00] dark:bg-[#d4a373] hover:bg-[#3C1F00] dark:hover:bg-[#e5b342] text-white dark:text-[#120601] font-bold rounded-xl transition-colors shrink-0"
+                >
                   Join
                 </button>
               </div>
