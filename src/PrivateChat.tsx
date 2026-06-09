@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { X, Send, Image as ImageIcon, Mic, Square, Loader2, MessageSquare, Lock, Trash2, Smile, WifiOff, Download } from 'lucide-react';
+import { X, Send, Image as ImageIcon, Mic, Square, Loader2, MessageSquare, Lock, Trash2, Smile, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Message {
@@ -26,11 +26,8 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
-  // Audio Recording States
   const [isRecording, setIsRecording] = useState(false);
   const [audioPreview, setAudioPreview] = useState<{ blob: Blob, url: string } | null>(null);
-
-  // --- NEW: Image Preview State ---
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
@@ -52,13 +49,25 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, partnerTyping, audioPreview]);
 
+  // FIX 1: STRICT SEPARATION OF CONCERNS
+  // WebRTC Cleanup ONLY on Component Unmount
   useEffect(() => {
     return () => {
+      console.log("[WebRTC] Component unmounting, tearing down connections.");
       if (dcRef.current) dcRef.current.close();
       if (pcRef.current) pcRef.current.close();
       if (socketRef.current) socketRef.current.disconnect();
-      if (audioPreview) URL.revokeObjectURL(audioPreview.url);
       if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
+    };
+  }, []); // <-- Empty array is critical here
+
+  // Audio Preview Memory Management
+  useEffect(() => {
+    return () => {
+      if (audioPreview) {
+        console.log("[Audio] Cleaning up old audio blob URL.");
+        URL.revokeObjectURL(audioPreview.url);
+      }
     };
   }, [audioPreview]);
 
@@ -67,7 +76,8 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       const res = await fetch('https://chocoshare-turn-auth.snahasishdey141.workers.dev/');
       const data = await res.json();
       return [{ urls: "stun:stun.l.google.com:19302" }, ...data.iceServers];
-    } catch {
+    } catch (e) {
+      console.error("[WebRTC] Failed to fetch TURN servers, falling back to STUN.", e);
       return [{ urls: "stun:stun.l.google.com:19302" }];
     }
   };
@@ -76,6 +86,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     channel.binaryType = 'arraybuffer';
 
     channel.onopen = () => {
+      console.log("[DataChannel] Channel securely opened.");
       setStatus('');
       setConnState('connected');
       setView('chat');
@@ -89,6 +100,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
           binaryTracker.chunks.push(event.data);
           binaryTracker.count++;
           if (binaryTracker.count === binaryTracker.total) {
+            console.log(`[DataChannel] Assembled complete binary payload for ${binaryTracker.id}`);
             const blob = new Blob(binaryTracker.chunks, { type: binaryTracker.mime });
             const url = URL.createObjectURL(blob);
             setMessages(prev => [...prev, { id: binaryTracker!.id, type: 'audio', content: url, sender: 'partner', timestamp: new Date(binaryTracker!.timestamp) }]);
@@ -99,89 +111,130 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
         return;
       }
 
-      const data = JSON.parse(event.data);
-      
-      if (data.type === 'msg_start_binary') {
-        binaryTracker = { id: data.id, chunks: [], count: 0, total: data.total, timestamp: data.timestamp, mime: data.mimeType };
-        return;
-      }
-
-      if (data.type === 'msg_start') {
-        chunkTrackerRef.current[data.id] = { type: data.msgType, chunks: new Array(data.total), count: 0, timestamp: data.timestamp };
-        return;
-      }
-
-      if (data.type === 'msg_chunk') {
-        const tracker = chunkTrackerRef.current[data.id];
-        if (!tracker) return;
-        if (!tracker.chunks[data.index]) {
-          tracker.chunks[data.index] = data.chunk;
-          tracker.count++;
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'msg_start_binary') {
+          console.log(`[DataChannel] Incoming binary transfer started: ${data.total} chunks.`);
+          binaryTracker = { id: data.id, chunks: [], count: 0, total: data.total, timestamp: data.timestamp, mime: data.mimeType };
+          return;
         }
-        if (tracker.count === tracker.chunks.length) {
-          try {
+
+        if (data.type === 'msg_start') {
+          chunkTrackerRef.current[data.id] = { type: data.msgType, chunks: new Array(data.total), count: 0, timestamp: data.timestamp };
+          return;
+        }
+
+        if (data.type === 'msg_chunk') {
+          const tracker = chunkTrackerRef.current[data.id];
+          if (!tracker) return;
+          if (!tracker.chunks[data.index]) {
+            tracker.chunks[data.index] = data.chunk;
+            tracker.count++;
+          }
+          if (tracker.count === tracker.chunks.length) {
             setMessages(prev => [...prev, { id: data.id, type: tracker.type, content: tracker.chunks.join(''), sender: 'partner', timestamp: new Date(tracker.timestamp) }]);
-          } catch (e) { console.error(e); }
-          setPartnerTyping(false);
-          delete chunkTrackerRef.current[data.id];
+            setPartnerTyping(false);
+            delete chunkTrackerRef.current[data.id];
+          }
+          return;
         }
-        return;
-      }
 
-      if (data.type === 'typing') setPartnerTyping(data.status);
+        if (data.type === 'typing') setPartnerTyping(data.status);
+      } catch (e) {
+        console.error("[DataChannel] Failed to parse text packet", e);
+      }
     };
 
-    channel.onclose = () => { setConnState('disconnected'); setPartnerTyping(false); };
+    channel.onerror = (error) => console.error("[DataChannel] Native Error:", error);
+    channel.onclose = () => { 
+      console.warn("[DataChannel] Closed by remote peer or network drop.");
+      setConnState('disconnected'); 
+      setPartnerTyping(false); 
+    };
     dcRef.current = channel;
   };
 
   const createPeerConnection = async (isCreator: boolean, targetId: string) => {
-    if (pcRef.current) pcRef.current.close(); 
-    const iceServers = await getIceServers();
-    const pc = new RTCPeerConnection({ iceServers });
-    pcRef.current = pc;
-    candidateQueueRef.current = [];
-
-    pc.onicecandidate = (e) => {
-      if (e.candidate && socketRef.current?.connected) socketRef.current.emit('signal', { roomId: targetId, signal: { type: 'candidate', candidate: e.candidate } });
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-        setConnState('reconnecting');
-        if (isCreator && activeCodeRef.current) setTimeout(() => { if (pcRef.current === pc) initiateOffer(activeCodeRef.current!); }, 1500);
-      } else if (pc.iceConnectionState === 'connected') {
-        setConnState('connected');
+    try {
+      if (pcRef.current) {
+        console.log("[WebRTC] Closing existing PC for fresh rebuild.");
+        pcRef.current.close(); 
       }
-    };
-    return pc;
+      const iceServers = await getIceServers();
+      const pc = new RTCPeerConnection({ iceServers });
+      pcRef.current = pc;
+      candidateQueueRef.current = [];
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate && socketRef.current?.connected) {
+          socketRef.current.emit('signal', { roomId: targetId, signal: { type: 'candidate', candidate: e.candidate } });
+        }
+      };
+
+      // FIX 2: TOLERANT ICE STATE MANAGEMENT
+      pc.oniceconnectionstatechange = () => {
+        console.log(`[WebRTC] ICE Connection State changed to: ${pc.iceConnectionState}`);
+        
+        if (pc.iceConnectionState === 'failed') {
+          console.error("[WebRTC] ICE Tunnel FAILED. Forcing deep reconnect.");
+          setConnState('reconnecting');
+          if (isCreator && activeCodeRef.current) setTimeout(() => { if (pcRef.current === pc) initiateOffer(activeCodeRef.current!); }, 1500);
+        } 
+        else if (pc.iceConnectionState === 'disconnected') {
+          console.warn("[WebRTC] ICE Tunnel DISCONNECTED. Awaiting recovery (not rebuilding yet).");
+          setConnState('reconnecting'); // Update UI only, let WebRTC try to heal
+        } 
+        else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+          setConnState('connected');
+        }
+      };
+      return pc;
+    } catch (e) {
+      console.error("[WebRTC] Failed to create RTCPeerConnection", e);
+      throw e;
+    }
   };
 
   const initiateOffer = async (targetId: string) => {
-    setStatus('Securing P2P connection...');
-    const pc = await createPeerConnection(true, targetId);
-    const dc = pc.createDataChannel('secure_chat');
-    setupDataChannel(dc);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socketRef.current?.emit('signal', { roomId: targetId, signal: { type: 'offer', sdp: offer } });
+    try {
+      setStatus('Securing P2P connection...');
+      const pc = await createPeerConnection(true, targetId);
+      const dc = pc.createDataChannel('secure_chat', { negotiated: false }); // Explicit options
+      setupDataChannel(dc);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socketRef.current?.emit('signal', { roomId: targetId, signal: { type: 'offer', sdp: offer } });
+      console.log("[WebRTC] Offer generated and sent.");
+    } catch (e) {
+      console.error("[WebRTC] Negotiation offer failed", e);
+    }
   };
 
   const handleIncomingOffer = async (sdp: any, targetId: string) => {
-    setStatus('Securing P2P connection...');
-    const pc = await createPeerConnection(false, targetId);
-    pc.ondatachannel = (e) => setupDataChannel(e.channel);
-    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    for (const c of candidateQueueRef.current) { try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch(e){} }
-    candidateQueueRef.current = [];
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    socketRef.current?.emit('signal', { roomId: targetId, signal: { type: 'answer', sdp: answer } });
+    try {
+      setStatus('Securing P2P connection...');
+      const pc = await createPeerConnection(false, targetId);
+      pc.ondatachannel = (e) => setupDataChannel(e.channel);
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      for (const c of candidateQueueRef.current) { try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch(e){} }
+      candidateQueueRef.current = [];
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socketRef.current?.emit('signal', { roomId: targetId, signal: { type: 'answer', sdp: answer } });
+      console.log("[WebRTC] Answer generated and sent.");
+    } catch (e) {
+      console.error("[WebRTC] Negotiation answer failed", e);
+    }
   };
 
   const setupSocket = (role: 'creator' | 'joiner', code: string) => {
     if (!socketRef.current) socketRef.current = io('https://chocoshare-chocoshare-signaling.hf.space');
     const socket = socketRef.current;
+    
+    socket.on('connect', () => console.log("[Socket] Connected to signaling server."));
+    socket.on('disconnect', () => console.warn("[Socket] Disconnected from signaling server."));
+
     socket.on('peer-joined', () => { if (activeRoleRef.current === 'creator' && activeCodeRef.current) initiateOffer(activeCodeRef.current); });
     socket.on('signal', async (signal) => {
       const targetId = activeCodeRef.current;
@@ -193,7 +246,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
         candidateQueueRef.current = [];
       }
       else if (signal.type === 'candidate') {
-        if (pcRef.current && pcRef.current.remoteDescription) { try { await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate)); } catch(e){} } 
+        if (pcRef.current && pcRef.current.remoteDescription) { try { await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate)); } catch(e){ console.error("[WebRTC] ICE candidate error", e); } } 
         else { candidateQueueRef.current.push(signal.candidate); }
       }
     });
@@ -202,12 +255,20 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        console.log("[App] Foreground detected. Auditing connection states.");
         const role = activeRoleRef.current;
         const targetId = activeCodeRef.current;
         if (targetId && socketRef.current) {
-          if (!socketRef.current.connected) { socketRef.current.connect(); socketRef.current.emit('join-room', targetId); }
+          if (!socketRef.current.connected) { 
+            console.log("[Socket] Restoring broken socket connection.");
+            socketRef.current.connect(); 
+            socketRef.current.emit('join-room', targetId); 
+          }
           const state = pcRef.current?.iceConnectionState;
-          if (role === 'creator' && (state === 'disconnected' || state === 'failed' || state === 'closed')) { setConnState('reconnecting'); initiateOffer(targetId); }
+          if (role === 'creator' && (state === 'failed' || state === 'closed')) { 
+            console.log("[WebRTC] Detected dead tunnel on resume. Re-initiating.");
+            setConnState('reconnecting'); initiateOffer(targetId); 
+          }
         }
       }
     };
@@ -228,51 +289,85 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     setupSocket('joiner', joinId); socketRef.current?.emit('join-room', joinId);
   };
 
+  // FIX 3: BULLETPROOF DATACHANNEL SENDING
   const sendMessage = async (type: 'text' | 'image', content: string) => {
-    if (!dcRef.current || dcRef.current.readyState !== 'open' || !content) return;
+    if (!dcRef.current || dcRef.current.readyState !== 'open' || !content) {
+      console.warn("[DataChannel] Denied send request: Channel not open.");
+      return;
+    }
     const msgId = Math.random().toString(36).substr(2, 9);
     const timestamp = new Date();
     
     setMessages(prev => [...prev, { id: msgId, type, content, sender: 'me', timestamp }]);
     setInputText(''); setShowEmojiPicker(false); handleTyping(false);
 
-    const CHUNK_SIZE = 16384; 
-    const totalChunks = Math.ceil(content.length / CHUNK_SIZE);
+    try {
+      const CHUNK_SIZE = 16384; 
+      const totalChunks = Math.ceil(content.length / CHUNK_SIZE);
 
-    dcRef.current.send(JSON.stringify({ type: 'msg_start', id: msgId, msgType: type, total: totalChunks, timestamp: timestamp.toISOString() }));
-    if (totalChunks > 0) {
-      for (let i = 0; i < totalChunks; i++) {
-        if (!dcRef.current || dcRef.current.readyState !== 'open') break;
-        while (dcRef.current && dcRef.current.bufferedAmount > 65535) await new Promise(resolve => setTimeout(resolve, 50));
-        dcRef.current.send(JSON.stringify({ type: 'msg_chunk', id: msgId, index: i, chunk: content.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) }));
-        await new Promise(resolve => setTimeout(resolve, 2));
+      dcRef.current.send(JSON.stringify({ type: 'msg_start', id: msgId, msgType: type, total: totalChunks, timestamp: timestamp.toISOString() }));
+      
+      if (totalChunks > 0) {
+        for (let i = 0; i < totalChunks; i++) {
+          if (!dcRef.current || dcRef.current.readyState !== 'open') break;
+          
+          // Strict Backpressure handling
+          while (dcRef.current && dcRef.current.bufferedAmount > 65535) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            // Crucial: check status again after sleeping
+            if (dcRef.current?.readyState !== 'open') throw new Error("Channel closed during buffer wait.");
+          }
+          
+          dcRef.current.send(JSON.stringify({ type: 'msg_chunk', id: msgId, index: i, chunk: content.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) }));
+          await new Promise(resolve => setTimeout(resolve, 2));
+        }
       }
+      console.log(`[DataChannel] Successfully transmitted ${type} message.`);
+    } catch (e) {
+      console.error(`[DataChannel] Transmission aborted for ${type}`, e);
     }
   };
 
   const sendAudioBinary = async () => {
-    if (!audioPreview || !dcRef.current || dcRef.current.readyState !== 'open') return;
-    const blob = audioPreview.blob;
-    const msgId = Math.random().toString(36).substr(2, 9);
-    const timestamp = new Date();
+    if (!audioPreview || !dcRef.current || dcRef.current.readyState !== 'open') {
+       console.warn("[DataChannel] Denied audio send request.");
+       return;
+    }
+    
+    try {
+      const blob = audioPreview.blob;
+      const msgId = Math.random().toString(36).substr(2, 9);
+      const timestamp = new Date();
 
-    setMessages(prev => [...prev, { id: msgId, type: 'audio', content: audioPreview.url, sender: 'me', timestamp }]);
-    setAudioPreview(null);
+      setMessages(prev => [...prev, { id: msgId, type: 'audio', content: audioPreview.url, sender: 'me', timestamp }]);
+      setAudioPreview(null);
 
-    const CHUNK_SIZE = 4096; 
-    const totalChunks = Math.ceil(blob.size / CHUNK_SIZE);
+      const CHUNK_SIZE = 8192; // Slightly larger for binary to reduce overhead
+      const totalChunks = Math.ceil(blob.size / CHUNK_SIZE);
 
-    dcRef.current.send(JSON.stringify({
-      type: 'msg_start_binary', id: msgId, msgType: 'audio', total: totalChunks, timestamp: timestamp.toISOString(), mimeType: blob.type
-    }));
+      console.log(`[Audio] Initiating binary transfer. Size: ${blob.size} bytes over ${totalChunks} chunks.`);
 
-    for (let i = 0; i < totalChunks; i++) {
-      if (!dcRef.current || dcRef.current.readyState !== 'open') break;
-      while (dcRef.current && dcRef.current.bufferedAmount > 16384) await new Promise(resolve => setTimeout(resolve, 10));
-      const chunkBlob = blob.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-      const arrayBuffer = await chunkBlob.arrayBuffer();
-      dcRef.current.send(arrayBuffer);
-      if (i % 5 === 0) await new Promise(resolve => setTimeout(resolve, 2));
+      dcRef.current.send(JSON.stringify({
+        type: 'msg_start_binary', id: msgId, msgType: 'audio', total: totalChunks, timestamp: timestamp.toISOString(), mimeType: blob.type
+      }));
+
+      for (let i = 0; i < totalChunks; i++) {
+        if (!dcRef.current || dcRef.current.readyState !== 'open') break;
+        
+        while (dcRef.current && dcRef.current.bufferedAmount > 65535) {
+           await new Promise(resolve => setTimeout(resolve, 20));
+           if (dcRef.current?.readyState !== 'open') throw new Error("Channel closed during binary buffer wait.");
+        }
+        
+        const chunkBlob = blob.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const arrayBuffer = await chunkBlob.arrayBuffer();
+        dcRef.current.send(arrayBuffer);
+        
+        if (i % 5 === 0) await new Promise(resolve => setTimeout(resolve, 2));
+      }
+      console.log("[Audio] Binary transfer complete.");
+    } catch (e) {
+      console.error("[Audio] Binary transmission aborted.", e);
     }
   };
 
@@ -298,15 +393,14 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200; // Increased max width for better quality viewing in full screen
-        const MAX_HEIGHT = 1200;
+        const MAX_WIDTH = 1200; const MAX_HEIGHT = 1200;
         let width = img.width; let height = img.height;
         if (width > height && width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } 
         else if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        sendMessage('image', canvas.toDataURL('image/jpeg', 0.8)); // Slightly higher quality
+        sendMessage('image', canvas.toDataURL('image/jpeg', 0.8)); 
       };
       img.src = event.target?.result as string;
     };
@@ -316,6 +410,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
 
   const startRecording = async () => {
     try {
+      console.log("[Audio] Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
       const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 12000 } : undefined;
       const mediaRecorder = new MediaRecorder(stream, options);
@@ -324,28 +419,47 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
 
       mediaRecorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       mediaRecorder.onstop = () => {
+        console.log("[Audio] Recording stopped. Processing tracks.");
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         setAudioPreview({ blob: audioBlob, url: URL.createObjectURL(audioBlob) });
+        // Cleanly stop hardware tracks without triggering an OS route rebuild
+        stream.getTracks().forEach(track => {
+           track.stop();
+           track.enabled = false;
+        });
         if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
       };
       
       mediaRecorder.start();
       setIsRecording(true);
+      console.log("[Audio] Recording started.");
 
       recordingTimeoutRef.current = setTimeout(() => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+           console.log("[Audio] Max duration reached. Auto-stopping.");
            mediaRecorderRef.current.stop();
            setIsRecording(false);
         }
       }, 10000);
 
-    } catch (err) { console.error('Mic access denied', err); }
+    } catch (err) { 
+      console.error('[Audio] Mic access denied or failed', err); 
+      alert("Microphone access is required to send voice notes.");
+    }
   };
 
-  const stopRecording = () => { if (mediaRecorderRef.current && isRecording) { mediaRecorderRef.current.stop(); setIsRecording(false); } };
-  const cancelRecording = () => { if (audioPreview) URL.revokeObjectURL(audioPreview.url); setAudioPreview(null); };
+  const stopRecording = () => { 
+    if (mediaRecorderRef.current && isRecording) { 
+      mediaRecorderRef.current.stop(); 
+      setIsRecording(false); 
+    } 
+  };
   
-  // --- NEW: Download Image Function ---
+  const cancelRecording = () => { 
+    if (audioPreview) URL.revokeObjectURL(audioPreview.url); 
+    setAudioPreview(null); 
+  };
+  
   const downloadImage = () => {
     if (!previewImage) return;
     const a = document.createElement('a');
@@ -358,12 +472,10 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      {/* Main Chat Overlay */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3C1F00]/40 dark:bg-black/60 backdrop-blur-md">
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} 
           className="w-full max-w-md h-[85vh] glass-card-strong rounded-3xl flex flex-col overflow-hidden relative border border-[#7B3F00]/20 dark:border-[#d4a373]/20 shadow-2xl">
           
-          {/* Header */}
           <div className="p-4 flex items-center justify-between bg-gradient-to-r from-[#C68E17] to-[#7B3F00] dark:from-[#e5b342] dark:to-[#c28415] text-white shadow-md z-10 shrink-0">
             <div className="flex items-center gap-2">
               <Lock className="w-5 h-5 opacity-80" />
@@ -374,7 +486,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
             </button>
           </div>
 
-          {/* LOBBY VIEW */}
           {view === 'lobby' ? (
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
               <MessageSquare className="w-16 h-16 text-[#C68E17] dark:text-[#e5b342] mb-4 opacity-50" />
@@ -422,7 +533,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             
-            /* CHAT VIEW */
             <div className="flex-1 flex flex-col bg-[#FFFDD0]/30 dark:bg-[#120601]/30 overflow-hidden relative">
               <div className={`text-center py-1.5 flex items-center justify-center gap-2 border-b transition-colors shadow-sm ${
                   connState === 'connected' ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400' :
@@ -439,7 +549,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
                   <div key={msg.id} className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[80%] p-3 rounded-2xl shadow-sm ${msg.sender === 'me' ? 'bg-[#7B3F00] dark:bg-[#d4a373] text-white dark:text-[#120601] rounded-br-sm' : 'glass-card text-[#3C1F00] dark:text-white rounded-bl-sm'}`}>
                       {msg.type === 'text' && <p className="text-sm font-medium whitespace-pre-wrap leading-relaxed">{msg.content}</p>}
-                      {/* NEW: Clickable Image */}
                       {msg.type === 'image' && (
                         <img 
                           src={msg.content} 
@@ -465,7 +574,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Input Bar */}
               <div className="p-3 glass-card border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 flex items-end gap-2 shrink-0 relative">
                 
                 <AnimatePresence>
@@ -519,44 +627,25 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
         </motion.div>
       </div>
 
-      {/* --- NEW: Full-Screen Image Preview Modal --- */}
       <AnimatePresence>
         {previewImage && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            // z-[60] ensures it appears ABOVE the chat window
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md"
             onClick={() => setPreviewImage(null)}
           >
             <div className="relative max-w-full max-h-full flex flex-col items-center justify-center" onClick={(e) => e.stopPropagation()}>
-              
-              {/* Controls */}
               <div className="absolute top-2 right-2 md:top-4 md:right-4 flex gap-3 z-[70]">
-                <button 
-                  onClick={downloadImage} 
-                  className="p-3 bg-white/10 hover:bg-[#C68E17] text-white rounded-full transition-all backdrop-blur-md shadow-lg"
-                  title="Download Image"
-                >
+                <button onClick={downloadImage} className="p-3 bg-white/10 hover:bg-[#C68E17] text-white rounded-full transition-all backdrop-blur-md shadow-lg" title="Download Image">
                   <Download className="w-6 h-6" />
                 </button>
-                <button 
-                  onClick={() => setPreviewImage(null)} 
-                  className="p-3 bg-white/10 hover:bg-red-500 text-white rounded-full transition-all backdrop-blur-md shadow-lg"
-                  title="Close Preview"
-                >
+                <button onClick={() => setPreviewImage(null)} className="p-3 bg-white/10 hover:bg-red-500 text-white rounded-full transition-all backdrop-blur-md shadow-lg" title="Close Preview">
                   <X className="w-6 h-6" />
                 </button>
               </div>
-
-              {/* The Image */}
               <motion.img
-                initial={{ scale: 0.9 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0.9 }}
-                src={previewImage}
-                alt="Full Size Preview"
+                initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
+                src={previewImage} alt="Full Size Preview"
                 className="max-w-[95vw] max-h-[85vh] md:max-w-[90vw] md:max-h-[90vh] object-contain rounded-lg shadow-2xl"
               />
             </div>
