@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { X, Send, Image as ImageIcon, Mic, Square, Loader2, MessageSquare, Lock, Trash2, Smile, Wifi, WifiOff } from 'lucide-react';
+import { X, Send, Image as ImageIcon, Mic, Square, Loader2, MessageSquare, Lock, Trash2, Smile, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Message {
@@ -29,7 +29,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   const [isRecording, setIsRecording] = useState(false);
   const [audioPreview, setAudioPreview] = useState<{ blob: Blob, url: string } | null>(null);
 
-  // Stable Refs for Reconnection Logic
   const socketRef = useRef<Socket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
@@ -38,25 +37,24 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   const candidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
   
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   
-  // OPTIMIZATION: Better chunk tracking to stop UI freezes
-  const chunkTrackerRef = useRef<Record<string, { chunks: string[], count: number }>>({});
+  const chunkTrackerRef = useRef<Record<string, { type: 'text' | 'image', chunks: string[], count: number, timestamp: string }>>({});
 
-  // Auto-scroll chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, partnerTyping, audioPreview]);
 
-  // Cleanup on close
   useEffect(() => {
     return () => {
       if (dcRef.current) dcRef.current.close();
       if (pcRef.current) pcRef.current.close();
       if (socketRef.current) socketRef.current.disconnect();
       if (audioPreview) URL.revokeObjectURL(audioPreview.url);
+      if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
     };
   }, [audioPreview]);
 
@@ -71,35 +69,62 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   };
 
   const setupDataChannel = (channel: RTCDataChannel) => {
+    channel.binaryType = 'arraybuffer'; // REQUIRED FOR RAW BINARY TRANSFER
+
     channel.onopen = () => {
       setStatus('');
       setConnState('connected');
       setView('chat');
     };
 
+    // Scoped tracker for incoming binary audio chunks
+    let binaryTracker: { id: string, chunks: ArrayBuffer[], count: number, total: number, timestamp: string, mime: string } | null = null;
+
     channel.onmessage = (event) => {
+      
+      // 1. HANDLE RAW BINARY (Audio)
+      if (event.data instanceof ArrayBuffer) {
+        if (binaryTracker) {
+          binaryTracker.chunks.push(event.data);
+          binaryTracker.count++;
+
+          // Rebuild Audio File when all pieces arrive
+          if (binaryTracker.count === binaryTracker.total) {
+            const blob = new Blob(binaryTracker.chunks, { type: binaryTracker.mime });
+            const url = URL.createObjectURL(blob);
+            setMessages(prev => [...prev, { id: binaryTracker!.id, type: 'audio', content: url, sender: 'partner', timestamp: new Date(binaryTracker!.timestamp) }]);
+            setPartnerTyping(false);
+            binaryTracker = null;
+          }
+        }
+        return;
+      }
+
+      // 2. HANDLE JSON STRINGS (Text, Images, Signals)
       const data = JSON.parse(event.data);
       
-      if (data.type === 'chunk') {
-        if (!chunkTrackerRef.current[data.id]) {
-          chunkTrackerRef.current[data.id] = { chunks: new Array(data.total), count: 0 };
+      // Binary Header interceptor
+      if (data.type === 'msg_start_binary') {
+        binaryTracker = { id: data.id, chunks: [], count: 0, total: data.total, timestamp: data.timestamp, mime: data.mimeType };
+        return;
+      }
+
+      if (data.type === 'msg_start') {
+        chunkTrackerRef.current[data.id] = { type: data.msgType, chunks: new Array(data.total), count: 0, timestamp: data.timestamp };
+        return;
+      }
+
+      if (data.type === 'msg_chunk') {
+        const tracker = chunkTrackerRef.current[data.id];
+        if (!tracker) return;
+        if (!tracker.chunks[data.index]) {
+          tracker.chunks[data.index] = data.chunk;
+          tracker.count++;
         }
-        
-        // Add chunk and increase count safely
-        if (!chunkTrackerRef.current[data.id].chunks[data.index]) {
-          chunkTrackerRef.current[data.id].chunks[data.index] = data.chunk;
-          chunkTrackerRef.current[data.id].count++;
-        }
-        
-        // Reassemble when complete
-        if (chunkTrackerRef.current[data.id].count === data.total) {
+        if (tracker.count === tracker.chunks.length) {
           try {
-            const fullString = chunkTrackerRef.current[data.id].chunks.join('');
-            const parsedMsg = JSON.parse(fullString);
-            setMessages(prev => [...prev, { ...parsedMsg, sender: 'partner', timestamp: new Date() }]);
-          } catch (e) {
-            console.error('Failed to parse completed chunks', e);
-          }
+            setMessages(prev => [...prev, { id: data.id, type: tracker.type, content: tracker.chunks.join(''), sender: 'partner', timestamp: new Date(tracker.timestamp) }]);
+          } catch (e) { console.error(e); }
           setPartnerTyping(false);
           delete chunkTrackerRef.current[data.id];
         }
@@ -107,44 +132,31 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       }
 
       if (data.type === 'typing') setPartnerTyping(data.status);
-      else {
-        setMessages(prev => [...prev, { ...data, sender: 'partner', timestamp: new Date() }]);
-        setPartnerTyping(false);
-      }
     };
 
-    channel.onclose = () => {
-      setConnState('disconnected');
-      setPartnerTyping(false);
-    };
+    channel.onclose = () => { setConnState('disconnected'); setPartnerTyping(false); };
     dcRef.current = channel;
   };
 
   const createPeerConnection = async (isCreator: boolean, targetId: string) => {
     if (pcRef.current) pcRef.current.close(); 
-    
     const iceServers = await getIceServers();
     const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
     candidateQueueRef.current = [];
 
     pc.onicecandidate = (e) => {
-      if (e.candidate && socketRef.current?.connected) {
-        socketRef.current.emit('signal', { roomId: targetId, signal: { type: 'candidate', candidate: e.candidate } });
-      }
+      if (e.candidate && socketRef.current?.connected) socketRef.current.emit('signal', { roomId: targetId, signal: { type: 'candidate', candidate: e.candidate } });
     };
 
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         setConnState('reconnecting');
-        if (isCreator && activeCodeRef.current) {
-          setTimeout(() => { if (pcRef.current === pc) initiateOffer(activeCodeRef.current!); }, 1500);
-        }
+        if (isCreator && activeCodeRef.current) setTimeout(() => { if (pcRef.current === pc) initiateOffer(activeCodeRef.current!); }, 1500);
       } else if (pc.iceConnectionState === 'connected') {
         setConnState('connected');
       }
     };
-
     return pc;
   };
 
@@ -153,7 +165,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     const pc = await createPeerConnection(true, targetId);
     const dc = pc.createDataChannel('secure_chat');
     setupDataChannel(dc);
-
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     socketRef.current?.emit('signal', { roomId: targetId, signal: { type: 'offer', sdp: offer } });
@@ -163,51 +174,30 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     setStatus('Securing P2P connection...');
     const pc = await createPeerConnection(false, targetId);
     pc.ondatachannel = (e) => setupDataChannel(e.channel);
-
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    
-    for (const c of candidateQueueRef.current) {
-      try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch(e){}
-    }
+    for (const c of candidateQueueRef.current) { try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch(e){} }
     candidateQueueRef.current = [];
-
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     socketRef.current?.emit('signal', { roomId: targetId, signal: { type: 'answer', sdp: answer } });
   };
 
   const setupSocket = (role: 'creator' | 'joiner', code: string) => {
-    if (!socketRef.current) {
-      socketRef.current = io('https://chocoshare-chocoshare-signaling.hf.space');
-    }
+    if (!socketRef.current) socketRef.current = io('https://chocoshare-chocoshare-signaling.hf.space');
     const socket = socketRef.current;
-
-    socket.on('peer-joined', () => {
-      if (activeRoleRef.current === 'creator' && activeCodeRef.current) {
-        initiateOffer(activeCodeRef.current);
-      }
-    });
-
+    socket.on('peer-joined', () => { if (activeRoleRef.current === 'creator' && activeCodeRef.current) initiateOffer(activeCodeRef.current); });
     socket.on('signal', async (signal) => {
       const targetId = activeCodeRef.current;
       if (!targetId) return;
-
-      if (signal.type === 'offer') {
-        handleIncomingOffer(signal.sdp, targetId);
-      } 
+      if (signal.type === 'offer') handleIncomingOffer(signal.sdp, targetId);
       else if (signal.type === 'answer' && pcRef.current) {
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-        for (const c of candidateQueueRef.current) {
-          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(c)); } catch(e){}
-        }
+        for (const c of candidateQueueRef.current) { try { await pcRef.current.addIceCandidate(new RTCIceCandidate(c)); } catch(e){} }
         candidateQueueRef.current = [];
       }
       else if (signal.type === 'candidate') {
-        if (pcRef.current && pcRef.current.remoteDescription) {
-          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate)); } catch(e){}
-        } else {
-          candidateQueueRef.current.push(signal.candidate);
-        }
+        if (pcRef.current && pcRef.current.remoteDescription) { try { await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate)); } catch(e){} } 
+        else { candidateQueueRef.current.push(signal.candidate); }
       }
     });
   };
@@ -217,18 +207,10 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       if (document.visibilityState === 'visible') {
         const role = activeRoleRef.current;
         const targetId = activeCodeRef.current;
-        
         if (targetId && socketRef.current) {
-          if (!socketRef.current.connected) {
-             socketRef.current.connect();
-             socketRef.current.emit('join-room', targetId);
-          }
-          
+          if (!socketRef.current.connected) { socketRef.current.connect(); socketRef.current.emit('join-room', targetId); }
           const state = pcRef.current?.iceConnectionState;
-          if (role === 'creator' && (state === 'disconnected' || state === 'failed' || state === 'closed')) {
-             setConnState('reconnecting');
-             initiateOffer(targetId); 
-          }
+          if (role === 'creator' && (state === 'disconnected' || state === 'failed' || state === 'closed')) { setConnState('reconnecting'); initiateOffer(targetId); }
         }
       }
     };
@@ -238,63 +220,73 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
 
   const handleCreateRoom = () => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setRoomId(code);
-    activeRoleRef.current = 'creator';
-    activeCodeRef.current = code;
-    
+    setRoomId(code); activeRoleRef.current = 'creator'; activeCodeRef.current = code;
     setupSocket('creator', code);
-    setStatus('Generating secure room...');
-    socketRef.current?.emit('create-room', code);
-    setStatus('Waiting for partner...');
+    setStatus('Generating secure room...'); socketRef.current?.emit('create-room', code); setStatus('Waiting for partner...');
   };
 
   const handleJoinRoom = () => {
     if (joinId.length !== 6) return;
-    setStatus('Connecting to room...');
-    activeRoleRef.current = 'joiner';
-    activeCodeRef.current = joinId;
-
-    setupSocket('joiner', joinId);
-    socketRef.current?.emit('join-room', joinId);
+    setStatus('Connecting to room...'); activeRoleRef.current = 'joiner'; activeCodeRef.current = joinId;
+    setupSocket('joiner', joinId); socketRef.current?.emit('join-room', joinId);
   };
 
-  // --- STABLE PACED SENDING (Heartbeat Starvation Fix) ---
-  const sendMessage = async (type: 'text' | 'image' | 'audio', content: string) => {
+  // --- TEXT & IMAGE SENDING (JSON) ---
+  const sendMessage = async (type: 'text' | 'image', content: string) => {
     if (!dcRef.current || dcRef.current.readyState !== 'open' || !content) return;
-
-    const msgObj = { id: Math.random().toString(36).substr(2, 9), type, content };
-    const msgString = JSON.stringify(msgObj);
+    const msgId = Math.random().toString(36).substr(2, 9);
+    const timestamp = new Date();
     
-    setMessages(prev => [...prev, { ...msgObj, sender: 'me', timestamp: new Date() }]);
-    setInputText('');
-    setShowEmojiPicker(false);
-    handleTyping(false);
+    setMessages(prev => [...prev, { id: msgId, type, content, sender: 'me', timestamp }]);
+    setInputText(''); setShowEmojiPicker(false); handleTyping(false);
 
-    // FIXED: Reduced to 8KB per chunk for much better network stability
-    const CHUNK_SIZE = 8192; 
-    const totalChunks = Math.ceil(msgString.length / CHUNK_SIZE);
+    const CHUNK_SIZE = 16384; 
+    const totalChunks = Math.ceil(content.length / CHUNK_SIZE);
 
-    if (totalChunks > 1) {
+    dcRef.current.send(JSON.stringify({ type: 'msg_start', id: msgId, msgType: type, total: totalChunks, timestamp: timestamp.toISOString() }));
+    if (totalChunks > 0) {
       for (let i = 0; i < totalChunks; i++) {
         if (!dcRef.current || dcRef.current.readyState !== 'open') break;
-        
-        // Strict backpressure - ensures we don't flood the WebRTC tunnel
-        while (dcRef.current && dcRef.current.bufferedAmount > 16384) {
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
-        
-        dcRef.current.send(JSON.stringify({ 
-          type: 'chunk', id: msgObj.id, chunk: msgString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE), index: i, total: totalChunks 
-        }));
-
-        // CRITICAL FIX: Pauses loop every 5 chunks to let "Heartbeat" packets pass
-        // This stops the other phone from thinking you disconnected!
-        if (i % 5 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 5));
-        }
+        while (dcRef.current && dcRef.current.bufferedAmount > 65535) await new Promise(resolve => setTimeout(resolve, 50));
+        dcRef.current.send(JSON.stringify({ type: 'msg_chunk', id: msgId, index: i, chunk: content.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) }));
+        await new Promise(resolve => setTimeout(resolve, 2));
       }
-    } else {
-      dcRef.current.send(msgString);
+    }
+  };
+
+  // --- RAW BINARY AUDIO SENDING ---
+  const sendAudioBinary = async () => {
+    if (!audioPreview || !dcRef.current || dcRef.current.readyState !== 'open') return;
+
+    const blob = audioPreview.blob;
+    const msgId = Math.random().toString(36).substr(2, 9);
+    const timestamp = new Date();
+
+    setMessages(prev => [...prev, { id: msgId, type: 'audio', content: audioPreview.url, sender: 'me', timestamp }]);
+    setAudioPreview(null); // Clear UI immediately
+
+    // Optimized user requirements: 4096 byte chunks
+    const CHUNK_SIZE = 4096; 
+    const totalChunks = Math.ceil(blob.size / CHUNK_SIZE);
+
+    // 1. Send JSON Header so receiver knows binary is coming
+    dcRef.current.send(JSON.stringify({
+      type: 'msg_start_binary', id: msgId, msgType: 'audio', total: totalChunks, timestamp: timestamp.toISOString(), mimeType: blob.type
+    }));
+
+    // 2. Send Raw ArrayBuffer Chunks
+    for (let i = 0; i < totalChunks; i++) {
+      if (!dcRef.current || dcRef.current.readyState !== 'open') break;
+
+      while (dcRef.current && dcRef.current.bufferedAmount > 16384) { 
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+
+      const chunkBlob = blob.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      const arrayBuffer = await chunkBlob.arrayBuffer();
+      dcRef.current.send(arrayBuffer); // Sends pure binary over WebRTC
+
+      if (i % 5 === 0) await new Promise(resolve => setTimeout(resolve, 2));
     }
   };
 
@@ -335,26 +327,45 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     e.target.value = '';
   };
 
+  // --- CAPPED LOW-BITRATE AUDIO ---
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { channelCount: 1, sampleRate: 16000 } 
+      });
+      
+      const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+            ? { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 12000 } 
+            : undefined;
+
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+
       mediaRecorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         setAudioPreview({ blob: audioBlob, url: URL.createObjectURL(audioBlob) });
         stream.getTracks().forEach(track => track.stop());
+        if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
       };
+      
       mediaRecorder.start();
       setIsRecording(true);
+
+      // Auto-Stop after 10 Seconds cap
+      recordingTimeoutRef.current = setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+           mediaRecorderRef.current.stop();
+           setIsRecording(false);
+        }
+      }, 10000);
+
     } catch (err) { console.error('Mic access denied', err); }
   };
 
   const stopRecording = () => { if (mediaRecorderRef.current && isRecording) { mediaRecorderRef.current.stop(); setIsRecording(false); } };
   const cancelRecording = () => { if (audioPreview) URL.revokeObjectURL(audioPreview.url); setAudioPreview(null); };
-  const sendAudio = () => { if (!audioPreview) return; const reader = new FileReader(); reader.onload = () => { sendMessage('audio', reader.result as string); cancelRecording(); }; reader.readAsDataURL(audioPreview.blob); };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3C1F00]/40 dark:bg-black/60 backdrop-blur-md">
@@ -477,11 +488,11 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
                 <div className="flex-1 flex items-center justify-between glass-input rounded-2xl p-2 mb-0.5">
                   <button onClick={cancelRecording} className="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors"><Trash2 className="w-5 h-5" /></button>
                   <audio controls src={audioPreview.url} className="h-10 max-w-[200px]" />
-                  <button onClick={sendAudio} className="p-2.5 bg-[#C68E17] text-white rounded-full transition-colors shadow-md"><Send className="w-5 h-5" /></button>
+                  <button onClick={sendAudioBinary} className="p-2.5 bg-[#C68E17] text-white rounded-full transition-colors shadow-md"><Send className="w-5 h-5" /></button>
                 </div>
               ) : isRecording ? (
                 <div className="flex-1 flex items-center justify-between glass-input rounded-2xl px-4 py-2 mb-0.5 border-red-400">
-                  <div className="flex items-center gap-2 text-red-500 font-bold animate-pulse"><Mic className="w-5 h-5" /> Recording...</div>
+                  <div className="flex items-center gap-2 text-red-500 font-bold animate-pulse"><Mic className="w-5 h-5" /> Recording (Max 10s)...</div>
                   <button onClick={stopRecording} className="p-2 bg-red-500 text-white rounded-full transition-colors shadow-md"><Square className="w-4 h-4 fill-current" /></button>
                 </div>
               ) : (
