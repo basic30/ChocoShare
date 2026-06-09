@@ -326,7 +326,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         setAudioPreview({ blob: audioBlob, url: URL.createObjectURL(audioBlob) });
-        stream.getTracks().forEach(track => track.stop());
         if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
       };
       
