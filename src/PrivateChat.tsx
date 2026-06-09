@@ -41,7 +41,9 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const chunkBufferRef = useRef<Record<string, string[]>>({});
+  
+  // OPTIMIZATION: Better chunk tracking to stop UI freezes
+  const chunkTrackerRef = useRef<Record<string, { chunks: string[], count: number }>>({});
 
   // Auto-scroll chat
   useEffect(() => {
@@ -77,17 +79,33 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
 
     channel.onmessage = (event) => {
       const data = JSON.parse(event.data);
+      
       if (data.type === 'chunk') {
-        if (!chunkBufferRef.current[data.id]) chunkBufferRef.current[data.id] = new Array(data.total);
-        chunkBufferRef.current[data.id][data.index] = data.chunk;
-        if (chunkBufferRef.current[data.id].filter(Boolean).length === data.total) {
-          const parsedMsg = JSON.parse(chunkBufferRef.current[data.id].join(''));
-          setMessages(prev => [...prev, { ...parsedMsg, sender: 'partner', timestamp: new Date() }]);
+        if (!chunkTrackerRef.current[data.id]) {
+          chunkTrackerRef.current[data.id] = { chunks: new Array(data.total), count: 0 };
+        }
+        
+        // Add chunk and increase count safely
+        if (!chunkTrackerRef.current[data.id].chunks[data.index]) {
+          chunkTrackerRef.current[data.id].chunks[data.index] = data.chunk;
+          chunkTrackerRef.current[data.id].count++;
+        }
+        
+        // Reassemble when complete
+        if (chunkTrackerRef.current[data.id].count === data.total) {
+          try {
+            const fullString = chunkTrackerRef.current[data.id].chunks.join('');
+            const parsedMsg = JSON.parse(fullString);
+            setMessages(prev => [...prev, { ...parsedMsg, sender: 'partner', timestamp: new Date() }]);
+          } catch (e) {
+            console.error('Failed to parse completed chunks', e);
+          }
           setPartnerTyping(false);
-          delete chunkBufferRef.current[data.id];
+          delete chunkTrackerRef.current[data.id];
         }
         return;
       }
+
       if (data.type === 'typing') setPartnerTyping(data.status);
       else {
         setMessages(prev => [...prev, { ...data, sender: 'partner', timestamp: new Date() }]);
@@ -102,9 +120,8 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     dcRef.current = channel;
   };
 
-  // --- CORE RECONNECTION ENGINE ---
   const createPeerConnection = async (isCreator: boolean, targetId: string) => {
-    if (pcRef.current) pcRef.current.close(); // Destroy old tunnel
+    if (pcRef.current) pcRef.current.close(); 
     
     const iceServers = await getIceServers();
     const pc = new RTCPeerConnection({ iceServers });
@@ -121,7 +138,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         setConnState('reconnecting');
         if (isCreator && activeCodeRef.current) {
-          // Automatic Self-Healing: Creator forces a new handshake if connection drops
           setTimeout(() => { if (pcRef.current === pc) initiateOffer(activeCodeRef.current!); }, 1500);
         }
       } else if (pc.iceConnectionState === 'connected') {
@@ -196,7 +212,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     });
   };
 
-  // --- MOBILE LOCK/UNLOCK SURVIVAL ---
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -206,13 +221,13 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
         if (targetId && socketRef.current) {
           if (!socketRef.current.connected) {
              socketRef.current.connect();
-             socketRef.current.emit('join-room', targetId); // Re-join signaling room
+             socketRef.current.emit('join-room', targetId);
           }
           
           const state = pcRef.current?.iceConnectionState;
           if (role === 'creator' && (state === 'disconnected' || state === 'failed' || state === 'closed')) {
              setConnState('reconnecting');
-             initiateOffer(targetId); // Force WebRTC rebuild
+             initiateOffer(targetId); 
           }
         }
       }
@@ -221,7 +236,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
-  // --- ROOM INITIALIZATION ---
   const handleCreateRoom = () => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setRoomId(code);
@@ -244,7 +258,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     socketRef.current?.emit('join-room', joinId);
   };
 
-  // --- SECURE SENDING ---
+  // --- STABLE PACED SENDING (Heartbeat Starvation Fix) ---
   const sendMessage = async (type: 'text' | 'image' | 'audio', content: string) => {
     if (!dcRef.current || dcRef.current.readyState !== 'open' || !content) return;
 
@@ -256,17 +270,28 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
     setShowEmojiPicker(false);
     handleTyping(false);
 
-    const CHUNK_SIZE = 16384; 
+    // FIXED: Reduced to 8KB per chunk for much better network stability
+    const CHUNK_SIZE = 8192; 
     const totalChunks = Math.ceil(msgString.length / CHUNK_SIZE);
 
     if (totalChunks > 1) {
       for (let i = 0; i < totalChunks; i++) {
         if (!dcRef.current || dcRef.current.readyState !== 'open') break;
-        // Anti-Crash Backpressure
-        while (dcRef.current && dcRef.current.bufferedAmount > 65535) {
+        
+        // Strict backpressure - ensures we don't flood the WebRTC tunnel
+        while (dcRef.current && dcRef.current.bufferedAmount > 16384) {
           await new Promise(resolve => setTimeout(resolve, 10));
         }
-        dcRef.current.send(JSON.stringify({ type: 'chunk', id: msgObj.id, chunk: msgString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE), index: i, total: totalChunks }));
+        
+        dcRef.current.send(JSON.stringify({ 
+          type: 'chunk', id: msgObj.id, chunk: msgString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE), index: i, total: totalChunks 
+        }));
+
+        // CRITICAL FIX: Pauses loop every 5 chunks to let "Heartbeat" packets pass
+        // This stops the other phone from thinking you disconnected!
+        if (i % 5 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
       }
     } else {
       dcRef.current.send(msgString);
