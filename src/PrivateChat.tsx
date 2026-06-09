@@ -43,16 +43,13 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   
-  // FIX: Global tracker for all generated Blob URLs to prevent memory leaks safely
   const activeBlobUrlsRef = useRef<Set<string>>(new Set());
-  
   const chunkTrackerRef = useRef<Record<string, { type: 'text' | 'image', chunks: string[], count: number, timestamp: string }>>({});
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, partnerTyping, audioPreview]);
 
-  // FIX: Centralized Cleanup. Only destroy URLs when the component completely unmounts.
   useEffect(() => {
     return () => {
       console.log("[WebRTC] Component unmounting, tearing down connections and memory.");
@@ -61,7 +58,6 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       if (socketRef.current) socketRef.current.disconnect();
       if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
       
-      // Clean up all active blob URLs to prevent memory leaks
       activeBlobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
       activeBlobUrlsRef.current.clear();
     };
@@ -99,7 +95,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
             console.log(`[DataChannel] Assembled complete binary payload for ${binaryTracker.id}`);
             const blob = new Blob(binaryTracker.chunks, { type: binaryTracker.mime });
             const url = URL.createObjectURL(blob);
-            activeBlobUrlsRef.current.add(url); // Track for cleanup
+            activeBlobUrlsRef.current.add(url);
 
             setMessages(prev => [...prev, { id: binaryTracker!.id, type: 'audio', content: url, sender: 'partner', timestamp: new Date(binaryTracker!.timestamp) }]);
             setPartnerTyping(false);
@@ -303,13 +299,10 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       const msgId = Math.random().toString(36).substr(2, 9);
       const timestamp = new Date();
 
-      // FIX: Generate a FRESH url for the chat history that won't be killed when preview closes
       const historyUrl = URL.createObjectURL(blob);
       activeBlobUrlsRef.current.add(historyUrl);
 
       setMessages(prev => [...prev, { id: msgId, type: 'audio', content: historyUrl, sender: 'me', timestamp }]);
-      
-      // We can now safely clear the preview UI
       setAudioPreview(null);
 
       const CHUNK_SIZE = 8192; 
@@ -384,7 +377,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         const url = URL.createObjectURL(audioBlob);
-        activeBlobUrlsRef.current.add(url); // Track for cleanup
+        activeBlobUrlsRef.current.add(url);
         setAudioPreview({ blob: audioBlob, url });
         
         stream.getTracks().forEach(track => { track.stop(); track.enabled = false; });
@@ -480,7 +473,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
                     placeholder="6-Digit Code" 
                     value={joinId} 
                     onChange={(e) => setJoinId(e.target.value.replace(/\D/g, ''))}
-                    className="w-full sm:flex-1 glass-input rounded-xl px-4 py-3 text-center text-xl tracking-widest font-bold text-[#3C1F00] dark:text-white focus:outline-none min-w-0" 
+                    className="w-full sm:flex-1 min-w-0 glass-input rounded-xl px-4 py-3 text-center text-xl tracking-widest font-bold text-[#3C1F00] dark:text-white focus:outline-none" 
                   />
                   <button 
                     onClick={handleJoinRoom} 
@@ -535,6 +528,7 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* FIX: Add strict shrinking controls to the input bar so mobile buttons don't get pushed out */}
               <div className="p-3 glass-card border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 flex items-end gap-2 shrink-0 relative">
                 
                 <AnimatePresence>
@@ -553,32 +547,34 @@ export default function PrivateChat({ onClose }: { onClose: () => void }) {
                 </AnimatePresence>
 
                 {audioPreview ? (
-                  <div className="flex-1 flex items-center justify-between glass-input rounded-2xl p-2 mb-0.5">
-                    <button onClick={cancelRecording} className="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors"><Trash2 className="w-5 h-5" /></button>
-                    <audio controls src={audioPreview.url} className="h-10 max-w-[200px]" />
-                    <button onClick={sendAudioBinary} className="p-2.5 bg-[#C68E17] text-white rounded-full transition-colors shadow-md"><Send className="w-5 h-5" /></button>
+                  <div className="flex-1 min-w-0 flex items-center justify-between glass-input rounded-2xl p-2 mb-0.5 gap-2">
+                    <button onClick={cancelRecording} className="p-2 shrink-0 text-red-500 hover:bg-red-500/10 rounded-full transition-colors"><Trash2 className="w-5 h-5" /></button>
+                    <audio controls src={audioPreview.url} className="h-10 min-w-0 w-full max-w-[200px]" />
+                    <button onClick={sendAudioBinary} className="p-2.5 shrink-0 bg-[#C68E17] text-white rounded-full transition-colors shadow-md"><Send className="w-5 h-5" /></button>
                   </div>
                 ) : isRecording ? (
-                  <div className="flex-1 flex items-center justify-between glass-input rounded-2xl px-4 py-2 mb-0.5 border-red-400">
-                    <div className="flex items-center gap-2 text-red-500 font-bold animate-pulse"><Mic className="w-5 h-5" /> Recording (Max 10s)...</div>
-                    <button onClick={stopRecording} className="p-2 bg-red-500 text-white rounded-full transition-colors shadow-md"><Square className="w-4 h-4 fill-current" /></button>
+                  <div className="flex-1 min-w-0 flex items-center justify-between glass-input rounded-2xl px-3 py-2 mb-0.5 border-red-400 gap-2">
+                    <div className="flex items-center gap-1.5 text-red-500 font-bold animate-pulse text-sm truncate shrink">
+                      <Mic className="w-5 h-5 shrink-0" /> <span className="truncate">Recording...</span>
+                    </div>
+                    <button onClick={stopRecording} className="p-2 shrink-0 bg-red-500 text-white rounded-full transition-colors shadow-md"><Square className="w-4 h-4 fill-current" /></button>
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-center gap-0.5">
-                      <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-2.5 rounded-full transition-colors mb-0.5 ${showEmojiPicker ? 'bg-[#7B3F00]/10 dark:bg-[#d4a373]/10 text-[#C68E17] dark:text-[#e5b342]' : 'text-[#7B3F00] dark:text-[#d4a373] hover:bg-[#7B3F00]/10 dark:hover:bg-[#d4a373]/10'}`}><Smile className="w-5 h-5" /></button>
-                      <label className="cursor-pointer p-2.5 text-[#7B3F00] dark:text-[#d4a373] hover:bg-[#7B3F00]/10 dark:hover:bg-[#d4a373]/10 rounded-full transition-colors mb-0.5">
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-2.5 shrink-0 rounded-full transition-colors mb-0.5 ${showEmojiPicker ? 'bg-[#7B3F00]/10 dark:bg-[#d4a373]/10 text-[#C68E17] dark:text-[#e5b342]' : 'text-[#7B3F00] dark:text-[#d4a373] hover:bg-[#7B3F00]/10 dark:hover:bg-[#d4a373]/10'}`}><Smile className="w-5 h-5" /></button>
+                      <label className="cursor-pointer shrink-0 p-2.5 text-[#7B3F00] dark:text-[#d4a373] hover:bg-[#7B3F00]/10 dark:hover:bg-[#d4a373]/10 rounded-full transition-colors mb-0.5">
                         <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                         <ImageIcon className="w-5 h-5" />
                       </label>
                     </div>
                     <input type="text" value={inputText} onChange={onInputChange} onKeyDown={(e) => e.key === 'Enter' && sendMessage('text', inputText)} onFocus={() => setShowEmojiPicker(false)}
-                      placeholder="Message..." className="flex-1 glass-input rounded-2xl px-4 py-2.5 text-sm font-medium text-[#3C1F00] dark:text-white focus:outline-none mb-0.5" disabled={connState !== 'connected'}
+                      placeholder="Message..." className="flex-1 min-w-0 glass-input rounded-2xl px-4 py-2.5 text-sm font-medium text-[#3C1F00] dark:text-white focus:outline-none mb-0.5" disabled={connState !== 'connected'}
                     />
                     {inputText ? (
-                      <button onClick={() => sendMessage('text', inputText)} className="p-2.5 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] text-white rounded-full transition-colors mb-0.5 shadow-md disabled:opacity-50" disabled={connState !== 'connected'}><Send className="w-5 h-5" /></button>
+                      <button onClick={() => sendMessage('text', inputText)} className="p-2.5 shrink-0 bg-[#C68E17] hover:bg-[#7B3F00] dark:bg-[#e5b342] text-white rounded-full transition-colors mb-0.5 shadow-md disabled:opacity-50" disabled={connState !== 'connected'}><Send className="w-5 h-5" /></button>
                     ) : (
-                      <button onClick={startRecording} className="p-2.5 glass-button text-[#7B3F00] dark:text-[#d4a373] rounded-full transition-colors mb-0.5 shadow-sm disabled:opacity-50" disabled={connState !== 'connected'}><Mic className="w-5 h-5" /></button>
+                      <button onClick={startRecording} className="p-2.5 shrink-0 glass-button text-[#7B3F00] dark:text-[#d4a373] rounded-full transition-colors mb-0.5 shadow-sm disabled:opacity-50" disabled={connState !== 'connected'}><Mic className="w-5 h-5" /></button>
                     )}
                   </>
                 )}
