@@ -4,8 +4,9 @@ import { io } from 'socket.io-client';
 import { 
   UploadCloud, Copy, CheckCircle2, AlertCircle, Loader2, Download, 
   Wifi, FileBox, X, Share2, QrCode, Lock, Zap, Infinity as InfinityIcon, ArrowRight, Moon, Sun, Type, FileUp, MessageSquare, Instagram, Github, Info, Heart, Mail, Wrench,
-  Clock, Trash2, FolderOpen, Signal, SignalHigh, SignalLow, WifiOff, History, FolderUp, File as FileIcon
+  Clock, Trash2, FolderOpen, Signal, SignalHigh, SignalLow, WifiOff, History, FolderUp, File as FileIcon, MessageSquarePlus
 } from 'lucide-react';
+import PrivateChat from './PrivateChat';
 
 const socket = io('https://chocoshare-chocoshare-signaling.hf.space');
 
@@ -520,9 +521,9 @@ const UpdateModal = () => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    const expiryDate = new Date('2026-05-30T23:59:59').getTime();
+    const expiryDate = new Date('2026-06-23T23:59:59').getTime();
     const now = Date.now();
-    const hasSeenUpdate = localStorage.getItem('chocoshare_update_v2_seen');
+    const hasSeenUpdate = localStorage.getItem('chocoshare_v3_update_seen');
 
     if (now < expiryDate && !hasSeenUpdate) {
       const timer = setTimeout(() => setIsVisible(true), 1000);
@@ -531,7 +532,7 @@ const UpdateModal = () => {
   }, []);
 
   const handleDismiss = () => {
-    localStorage.setItem('chocoshare_update_v2_seen', 'true');
+    localStorage.setItem('chocoshare_v3_update_seen', 'true');
     setIsVisible(false);
   };
 
@@ -545,9 +546,9 @@ const UpdateModal = () => {
           <div className="w-16 h-16 bg-gradient-to-br from-[#FFFDD0] to-[#C68E17]/20 dark:from-[#120601] dark:to-[#e5b342]/20 rounded-full flex items-center justify-center mx-auto mb-6 glow-gold">
             <Zap className="w-8 h-8 text-[#C68E17] dark:text-[#e5b342] animate-pulse" />
           </div>
-          <h3 className="text-2xl font-display font-black text-[#3C1F00] dark:text-white mb-3">Massive Speed Boost! 🚀</h3>
+          <h3 className="text-2xl font-display font-black text-[#3C1F00] dark:text-white mb-3">A Massive Upgrade! 🚀</h3>
           <p className="text-[#7B3F00]/80 dark:text-[#d4a373]/90 font-medium leading-relaxed mb-8">
-            We've completely overhauled our connection engine. Thanks to our new global enterprise-grade routing, devices now connect almost instantly—even across strict mobile networks and firewalls. Drop a file and experience the lightning-fast difference today! 🍫⚡
+            We've officially moved to our new home at <strong className="text-[#3C1F00] dark:text-white">chocoshare.qzz.io</strong>! We've also deployed a custom raw signaling server for lightning-fast, bulletproof P2P connections. Plus, check out our brand-new <strong className="text-[#3C1F00] dark:text-white">Secure Private Chat</strong> for fully ephemeral messaging. Enjoy the upgrades! 🍫✨
           </p>
           <button onClick={handleDismiss} className="w-full py-4 gradient-button text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform">
             Awesome, Got it!
@@ -1381,6 +1382,7 @@ export default function App() {
   if (isMaintenanceMode) {
     return <MaintenanceView />;
   }
+  const [showPrivateChat, setShowPrivateChat] = useState(false);
   const [route, setRoute] = useState<string>('home'); 
   const [payloadToShare, setPayloadToShare] = useState<SharePayload | null>(null);
   const [receiverId, setReceiverId] = useState<string | null>(null);
@@ -1567,6 +1569,28 @@ export default function App() {
           <li><strong className="text-[#3C1F00] dark:text-white">Fair Use:</strong> While there are no hard file size limits, users must respect the fair use of our free TURN relay servers to ensure the service remains fast for everyone.</li>
         </ul>
       </LegalModal>
+
+      {/* --- FLOATING CHAT BUTTON --- */}
+      <button
+        onClick={() => setShowPrivateChat(true)}
+        className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-[45] bg-gradient-to-r from-[#C68E17] to-[#7B3F00] dark:from-[#e5b342] dark:to-[#c28415] text-white p-4 rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 group glow-gold border border-white/20"
+        aria-label="Open Private Chat"
+      >
+        <MessageSquarePlus className="w-7 h-7 group-hover:animate-pulse" />
+        
+        {/* Optional Notification Dot */}
+        <span className="absolute top-0 right-0 flex h-3 w-3">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+        </span>
+      </button>
+
+      {/* --- SEPARATE CHAT PAGE OVERLAY --- */}
+      <AnimatePresence>
+        {showPrivateChat && (
+          <PrivateChat onClose={() => setShowPrivateChat(false)} />
+        )}
+      </AnimatePresence>
       
     </div>
   );
