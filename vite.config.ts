@@ -8,6 +8,10 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['logo.png', 'robots.txt', 'sitemap.xml'],
+      // 1. Tell VitePWA to inject our custom Service Worker handler
+      workbox: {
+        importScripts: ['/share-target-handler.js']
+      },
       manifest: {
         name: 'ChocoShare',
         short_name: 'ChocoShare',
@@ -15,6 +19,25 @@ export default defineConfig({
         theme_color: '#3C1F00',
         background_color: '#FFFDD0',
         display: 'standalone',
+        
+        // 2. Add the Share Target API Configuration
+        share_target: {
+          action: '/share-target',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+            files: [
+              {
+                name: 'shared_files',
+                accept: ['*/*'] // Accepts all file types (images, pdfs, videos)
+              }
+            ]
+          }
+        },
+        
         icons: [
           {
             src: '/logo-192.png',
