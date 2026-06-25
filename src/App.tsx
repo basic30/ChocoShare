@@ -1431,6 +1431,40 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [payloadToShare]);
 
+  useEffect(() => {
+    // Check if there are files shared natively from the OS
+    const checkSharedFiles = async () => {
+      try {
+        const req = indexedDB.open('ChocoShareDB', 1);
+        req.onupgradeneeded = (e: any) => e.target.result.createObjectStore('shared_store');
+        
+        req.onsuccess = (e: any) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('shared_store')) return;
+          
+          const tx = db.transaction('shared_store', 'readwrite');
+          const store = tx.objectStore('shared_store');
+          const getReq = store.get('pending_share');
+          
+          getReq.onsuccess = () => {
+            const files = getReq.result;
+            if (files && files.length > 0) {
+              // 1. Delete them from DB so it doesn't re-trigger on refresh
+              store.delete('pending_share');
+              
+              // 2. Automatically kick off the sharing process
+              startSharing({ type: 'files', data: files });
+            }
+          };
+        };
+      } catch (error) {
+        console.error('Error loading natively shared files:', error);
+      }
+    };
+    
+    checkSharedFiles();
+  }, []);
+
   const startSharing = (payload: SharePayload) => { setPayloadToShare(payload); setRoute('send'); window.location.hash = '#/send'; };
   const cancelSharing = () => { setPayloadToShare(null); setRoute('home'); window.location.hash = ''; };
 
