@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.chocoshare.app",
+        "sha256_cert_fingerprints": ["D9:7D:E8:0B:AA:1E:6A:D2:2A:AB:79:BE:04:E1:C6:A5:56:32:5A:42:85:CD:D6:DF:21:DD:A3:F7:33:0E:13:79"]
+      }
+    }]
