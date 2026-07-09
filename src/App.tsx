@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io } from 'socket.io-client';
-import { 
-  UploadCloud, Copy, CheckCircle2, AlertCircle, Loader2, Download, 
+import {
+  UploadCloud, Copy, CheckCircle2, AlertCircle, Loader2, Download,
   Wifi, FileBox, X, Share2, QrCode, Lock, Zap, Infinity as InfinityIcon, ArrowRight, Moon, Sun, Type, FileUp, MessageSquare, Instagram, Github, Info, Heart, Mail, Wrench,
   Clock, Trash2, FolderOpen, Signal, SignalHigh, SignalLow, WifiOff, History, FolderUp, File as FileIcon, MessageSquarePlus
 } from 'lucide-react';
@@ -104,7 +104,7 @@ const clearTransferHistory = () => {
 
 // --- CUSTOM HOOK FOR SPEED & ETA ---
 const useTransferSpeed = () => {
-  const [speed, setSpeed] = useState(0); 
+  const [speed, setSpeed] = useState(0);
   const [eta, setEta] = useState(Infinity);
   const lastTimeRef = useRef(Date.now());
   const lastBytesRef = useRef(0);
@@ -112,10 +112,10 @@ const useTransferSpeed = () => {
   const updateSpeed = useCallback((currentBytes: number, totalBytes: number) => {
     const now = Date.now();
     const timeDiff = now - lastTimeRef.current;
-    
-    if (timeDiff >= 500) { 
+
+    if (timeDiff >= 500) {
       const bytesDiff = currentBytes - lastBytesRef.current;
-      const currentSpeed = (bytesDiff / timeDiff) * 1000; 
+      const currentSpeed = (bytesDiff / timeDiff) * 1000;
       setSpeed(currentSpeed);
 
       const remainingBytes = totalBytes - currentBytes;
@@ -151,26 +151,26 @@ const ParticleBackground = () => {
 
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-      
+
       {/* Dark Chocolate Blob */}
-      <motion.div 
+      <motion.div
         animate={{ scale: [1, 1.1, 1], x: [0, 20, 0] }}
         transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-[25%] left-[-10%] w-[400px] h-[400px] bg-[#5B2E15] rounded-full blur-[100px] opacity-30 dark:opacity-15" 
+        className="absolute top-[25%] left-[-10%] w-[400px] h-[400px] bg-[#5B2E15] rounded-full blur-[100px] opacity-30 dark:opacity-15"
       />
-      
+
       {/* Milk Chocolate Blob */}
-      <motion.div 
+      <motion.div
         animate={{ scale: [1, 1.15, 1], x: [0, -30, 0] }}
         transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-[15%] right-[-10%] w-[500px] h-[500px] bg-[#7B3F00] rounded-full blur-[100px] opacity-40 dark:opacity-20" 
+        className="absolute top-[15%] right-[-10%] w-[500px] h-[500px] bg-[#7B3F00] rounded-full blur-[100px] opacity-40 dark:opacity-20"
       />
-      
+
       {/* Caramel / Light Chocolate Blob */}
-      <motion.div 
+      <motion.div
         animate={{ scale: [1, 1.1, 1], y: [0, -30, 0] }}
         transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute bottom-[-10%] left-[10%] w-[600px] h-[600px] bg-[#D2691E] rounded-[40%_60%_70%_30%] blur-[110px] opacity-35 dark:opacity-20" 
+        className="absolute bottom-[-10%] left-[10%] w-[600px] h-[600px] bg-[#D2691E] rounded-[40%_60%_70%_30%] blur-[110px] opacity-35 dark:opacity-20"
       />
 
       {/* --- FLOATING PARTICLES --- */}
@@ -205,8 +205,8 @@ const ParticleBackground = () => {
 const ChocolateHeader = () => (
   <div className="fixed top-0 left-0 w-full overflow-hidden leading-none z-10 pointer-events-none opacity-50 dark:opacity-45 transition-opacity duration-700">
     <svg className="relative block w-full h-[80px] md:h-[120px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
-      <path 
-        d="M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z" 
+      <path
+        d="M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z"
         className="fill-[#3C1F00] transition-colors duration-500"
       />
     </svg>
@@ -221,10 +221,10 @@ const ProgressBar = ({ progress, statusText, speed = 0, eta = Infinity }: { prog
       <span className="font-display font-bold">{Math.round(progress)}%</span>
     </div>
     <div className="h-4 w-full bg-[#FFFDD0]/50 dark:bg-[#120601]/50 rounded-full border border-[#7B3F00]/15 dark:border-[#d4a373]/15 overflow-hidden backdrop-blur-sm transition-colors">
-      <motion.div 
-        className="h-full bg-gradient-to-r from-[#C68E17] via-[#d4a373] to-[#7B3F00] dark:from-[#e5b342] dark:via-[#d4a373] dark:to-[#c28415] rounded-full relative overflow-hidden progress-glow" 
-        initial={{ width: 0 }} 
-        animate={{ width: `${progress}%` }} 
+      <motion.div
+        className="h-full bg-gradient-to-r from-[#C68E17] via-[#d4a373] to-[#7B3F00] dark:from-[#e5b342] dark:via-[#d4a373] dark:to-[#c28415] rounded-full relative overflow-hidden progress-glow"
+        initial={{ width: 0 }}
+        animate={{ width: `${progress}%` }}
         transition={{ ease: "linear", duration: 0.2 }}
       >
         <div className="absolute inset-0 shimmer" />
@@ -261,11 +261,11 @@ const ConnectionBadge = ({ conn }: { conn: any }) => {
         stats.forEach((report: any) => {
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
             foundPair = true;
-            
+
             // Check BOTH local and remote candidates
             const localCandidate = stats.get(report.localCandidateId);
             const remoteCandidate = stats.get(report.remoteCandidateId);
-            
+
             if (
               (localCandidate && localCandidate.candidateType === 'relay') ||
               (remoteCandidate && remoteCandidate.candidateType === 'relay')
@@ -304,8 +304,8 @@ const ConnectionBadge = ({ conn }: { conn: any }) => {
   const c = config[quality];
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.9 }} 
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${c.color} ${c.bg} backdrop-blur-sm border border-current/10`}
     >
@@ -334,9 +334,9 @@ const TransferHistoryPanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
     <>
       <AnimatePresence>
         {isOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
             className="fixed inset-0 bg-[#3C1F00]/30 dark:bg-black/50 backdrop-blur-sm z-[55]"
@@ -346,9 +346,9 @@ const TransferHistoryPanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
       <AnimatePresence>
         {isOpen && (
-          <motion.div 
-            initial={{ x: '100%' }} 
-            animate={{ x: 0 }} 
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: "spring", damping: 25, stiffness: 250 }}
             className="fixed top-0 right-0 h-full w-full max-w-md glass-card-strong z-[56] flex flex-col overflow-hidden"
@@ -376,30 +376,28 @@ const TransferHistoryPanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 </div>
               ) : (
                 history.map((record) => (
-                  <motion.div 
+                  <motion.div
                     key={record.id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="glass-card rounded-2xl p-4 group hover:scale-[1.01] transition-transform"
                   >
                     <div className="flex items-start gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        record.direction === 'sent' 
-                          ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' 
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${record.direction === 'sent'
+                          ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
                           : 'bg-green-500/10 text-green-600 dark:text-green-400'
-                      }`}>
+                        }`}>
                         {record.direction === 'sent' ? <UploadCloud className="w-5 h-5" /> : <Download className="w-5 h-5" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <p className="font-bold text-[#3C1F00] dark:text-white text-sm truncate">
-                            {record.contentType === 'files' 
-                              ? (record.fileCount && record.fileCount > 1 ? `${record.fileCount} Files` : record.fileName || 'File') 
+                            {record.contentType === 'files'
+                              ? (record.fileCount && record.fileCount > 1 ? `${record.fileCount} Files` : record.fileName || 'File')
                               : 'Text Message'}
                           </p>
-                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                            record.status === 'complete' ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'
-                          }`}>
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${record.status === 'complete' ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'
+                            }`}>
                             {record.status}
                           </span>
                         </div>
@@ -421,7 +419,7 @@ const TransferHistoryPanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
             {history.length > 0 && (
               <div className="p-4 border-t border-[#7B3F00]/10 dark:border-[#d4a373]/10 shrink-0">
-                <button 
+                <button
                   onClick={handleClear}
                   className="w-full py-3 rounded-xl glass-button text-red-500 hover:text-red-600 font-bold text-sm flex items-center justify-center gap-2 hover:bg-red-500/5"
                 >
@@ -460,13 +458,13 @@ const ReceiveModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
         <div className="p-8">
           <p className="text-[#7B3F00] dark:text-[#d4a373] mb-6 font-medium transition-colors">Enter the secure code or paste the full link shared by the sender below.</p>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <input 
-              type="text" 
-              placeholder="e.g. A7X9P2" 
-              value={code} 
-              onChange={(e) => setCode(e.target.value)} 
-              className="w-full px-4 py-4 rounded-xl glass-input text-[#3C1F00] dark:text-white font-bold text-center text-xl tracking-widest uppercase outline-none" 
-              autoFocus 
+            <input
+              type="text"
+              placeholder="e.g. A7X9P2"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="w-full px-4 py-4 rounded-xl glass-input text-[#3C1F00] dark:text-white font-bold text-center text-xl tracking-widest uppercase outline-none"
+              autoFocus
             />
             <button type="submit" disabled={!code.trim()} className="w-full py-4 gradient-button disabled:opacity-50 text-white font-bold rounded-xl flex items-center justify-center gap-2">
               Connect & Receive <ArrowRight className="w-5 h-5" />
@@ -479,12 +477,12 @@ const ReceiveModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
 };
 
 const FeatureCard = ({ icon, title, desc, delay = 0 }: { icon: React.ReactNode, title: string, desc: string, delay?: number }) => (
-  <motion.div 
+  <motion.div
     initial={{ opacity: 0, y: 30 }}
     whileInView={{ opacity: 1, y: 0 }}
     viewport={{ once: true, margin: "-50px" }}
     transition={{ duration: 0.6, delay, type: "spring", bounce: 0.3 }}
-    whileHover={{ y: -8, scale: 1.02, transition: { type: "tween", duration: 0.15 } }} 
+    whileHover={{ y: -8, scale: 1.02, transition: { type: "tween", duration: 0.15 } }}
     className="glass-card rounded-3xl p-8 flex flex-col items-center text-center transition-shadow duration-200 glow-gold-hover cursor-default"
   >
     <div className="w-16 h-16 bg-gradient-to-br from-[#C68E17]/15 to-[#7B3F00]/10 dark:from-[#e5b342]/15 dark:to-[#c28415]/10 text-[#7B3F00] dark:text-[#e5b342] rounded-2xl flex items-center justify-center mb-6 glow-gold transition-colors">
@@ -568,7 +566,7 @@ const FolderTreePreview = ({ files }: { files: File[] }) => {
     files.forEach(file => {
       const path = (file as any).webkitRelativePath || file.name;
       const parts = path.split('/');
-      
+
       if (parts.length > 1) {
         const folderName = parts[0];
         if (!folders[folderName]) {
@@ -588,8 +586,8 @@ const FolderTreePreview = ({ files }: { files: File[] }) => {
   if (folderEntries.length === 0 && tree.rootFiles.length === 0) return null;
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, height: 0 }} 
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: 'auto' }}
       className="mt-4 glass-card rounded-2xl p-4 max-h-40 overflow-y-auto"
     >
@@ -659,14 +657,14 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
 
   return (
     <div className="w-full flex flex-col items-center pb-20 md:pb-32">
-      <motion.div 
-        initial={{ opacity: 0, y: 40, scale: 0.95 }} 
-        animate={{ opacity: 1, y: 0, scale: 1 }} 
-        transition={{ type: "spring", bounce: 0.35, duration: 0.9 }} 
+      <motion.div
+        initial={{ opacity: 0, y: 40, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: "spring", bounce: 0.35, duration: 0.9 }}
         className="w-full max-w-xl mx-auto mt-10 glass-card-strong rounded-3xl p-5 md:p-6 transition-colors"
       >
         <div className="text-center mb-6">
-          <motion.div 
+          <motion.div
             initial={{ scale: 0, rotate: -20 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: "spring", bounce: 0.5, delay: 0.2 }}
@@ -692,17 +690,16 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
         {activeTab === 'files' && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
             <div
-              className={`relative rounded-3xl p-6 md:p-8 text-center transition-all duration-500 ease-out cursor-pointer flex flex-col items-center justify-center grid-pattern ${
-                isDragging 
-                  ? "animated-border scale-[1.02] glow-gold" 
+              className={`relative rounded-3xl p-6 md:p-8 text-center transition-all duration-500 ease-out cursor-pointer flex flex-col items-center justify-center grid-pattern ${isDragging
+                  ? "animated-border scale-[1.02] glow-gold"
                   : "border-[3px] border-dashed border-[#7B3F00]/20 dark:border-[#d4a373]/20 hover:border-[#C68E17]/50 dark:hover:border-[#e5b342]/50"
-              }`}
+                }`}
               onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
             >
               <input type="file" multiple ref={fileInputRef} className="hidden" onChange={(e) => e.target.files && e.target.files.length > 0 && onShare({ type: 'files', data: Array.from(e.target.files) })} />
-              <motion.div 
-                animate={{ y: isDragging ? -15 : [0, -8, 0] }} 
+              <motion.div
+                animate={{ y: isDragging ? -15 : [0, -8, 0] }}
                 transition={isDragging ? { duration: 0.3 } : { duration: 3, repeat: Infinity, ease: "easeInOut" }}
               >
                 <div className={`p-4 rounded-2xl mb-4 inline-flex transition-all duration-500 ${isDragging ? 'bg-[#C68E17]/15 glow-gold' : 'bg-[#7B3F00]/5 dark:bg-[#d4a373]/5'}`}>
@@ -729,7 +726,7 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
                 multiple
                 onChange={handleFolderSelect}
               />
-              <button 
+              <button
                 onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
                 className="flex-1 py-3.5 glass-button rounded-xl text-[#7B3F00] dark:text-[#d4a373] font-bold text-sm flex items-center justify-center gap-2 hover:text-[#C68E17] dark:hover:text-[#e5b342]"
               >
@@ -742,13 +739,13 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                 <FolderTreePreview files={selectedFiles} />
                 <div className="flex gap-3 mt-3">
-                  <button 
+                  <button
                     onClick={() => { setSelectedFiles([]); setShowFolderPreview(false); }}
                     className="flex-1 py-3 glass-button rounded-xl text-[#7B3F00]/60 dark:text-[#d4a373]/60 font-bold text-sm"
                   >
                     Cancel
                   </button>
-                  <button 
+                  <button
                     onClick={handleFolderShare}
                     className="flex-1 py-3 gradient-button rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2"
                   >
@@ -763,14 +760,14 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
         {/* --- TEXT INPUT AREA --- */}
         {activeTab === 'text' && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4">
-            <textarea 
-              placeholder="Paste a link, API key, or write a message here..." 
-              value={textInput} 
+            <textarea
+              placeholder="Paste a link, API key, or write a message here..."
+              value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               className="w-full h-40 p-4 rounded-2xl glass-input text-[#3C1F00] dark:text-white outline-none resize-none transition-colors font-medium"
             />
-            <button 
-              onClick={handleTextSubmit} 
+            <button
+              onClick={handleTextSubmit}
               disabled={!textInput.trim()}
               className="w-full py-4 gradient-button disabled:opacity-50 text-white font-bold rounded-xl flex items-center justify-center gap-2"
             >
@@ -783,7 +780,7 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
       {/* --- HOW IT WORKS SECTION --- */}
       <motion.div id="how-it-works" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.8 }} className="w-full max-w-6xl mx-auto mt-32 px-4 scroll-mt-28">
         <div className="text-center mb-16">
-          <motion.h2 
+          <motion.h2
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -791,7 +788,7 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
           >
             How ChocoShare Works ?
           </motion.h2>
-          <motion.p 
+          <motion.p
             initial={{ opacity: 0, y: 15 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -813,7 +810,7 @@ const HomeView = ({ onShare }: { onShare: (payload: SharePayload) => void }) => 
 
 // --- INDIVIDUAL TRANSFER TASK ---
 const TransferTask = ({ conn, payload }: { conn: any, payload: SharePayload }) => {
-  const [status, setStatus] = useState<string>('connecting'); 
+  const [status, setStatus] = useState<string>('connecting');
   const [progress, setProgress] = useState<number>(0);
   const [fileProgress, setFileProgress] = useState({ current: 0, total: payload.type === 'files' ? payload.data.length : 1 });
   const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed();
@@ -832,7 +829,7 @@ const TransferTask = ({ conn, payload }: { conn: any, payload: SharePayload }) =
 
   useEffect(() => {
     let currentIndex = 0;
-    let isTransferring = false; 
+    let isTransferring = false;
     let lastUiUpdate = 0;
 
     const sendInitialData = () => {
@@ -846,38 +843,38 @@ const TransferTask = ({ conn, payload }: { conn: any, payload: SharePayload }) =
         }
         const file = files[currentIndex];
         setFileProgress({ current: currentIndex + 1, total: files.length });
-        resetSpeed(); 
-        lastUiUpdate = 0; 
+        resetSpeed();
+        lastUiUpdate = 0;
         sendData({ type: 'metadata', name: file.name, size: file.size, mime: file.type || 'application/octet-stream' });
       }
     };
-    
+
     if (conn.readyState === 'open') sendInitialData();
     else conn.onopen = () => sendInitialData();
 
     // Small chunk size for weak networks
-    const CHUNK_SIZE = 64 * 1024; 
-    
+    const CHUNK_SIZE = 64 * 1024;
+
     const sendNextChunk = async (file: File, offset: number) => {
       if (offset >= file.size) { sendData({ type: 'eof' }); return; }
-      
+
       // Strict backpressure for instant ToffeeShare speeds
       if (conn.bufferedAmount > 512 * 1024) {
-        setTimeout(() => sendNextChunk(file, offset), 10); return; 
+        setTimeout(() => sendNextChunk(file, offset), 10); return;
       }
 
       const slice = file.slice(offset, offset + CHUNK_SIZE);
-      const buffer = await slice.arrayBuffer(); 
-      
+      const buffer = await slice.arrayBuffer();
+
       sendData(buffer);
       const newOffset = offset + CHUNK_SIZE;
-      
+
       if (newOffset - lastUiUpdate > 1024 * 1024 || newOffset >= file.size) {
-         setProgress(Math.min(100, (newOffset / file.size) * 100));
-         lastUiUpdate = newOffset;
+        setProgress(Math.min(100, (newOffset / file.size) * 100));
+        lastUiUpdate = newOffset;
       }
       updateSpeed(newOffset, file.size);
-      setTimeout(() => sendNextChunk(file, newOffset), 0); 
+      setTimeout(() => sendNextChunk(file, newOffset), 0);
     };
 
     conn.onmessage = (event: MessageEvent) => {
@@ -891,16 +888,16 @@ const TransferTask = ({ conn, payload }: { conn: any, payload: SharePayload }) =
       }
       else if (data.type === 'ready' && payload.type === 'files') {
         if (!isTransferring) {
-          isTransferring = true; setStatus('transferring'); sendNextChunk(payload.data[currentIndex], 0); 
+          isTransferring = true; setStatus('transferring'); sendNextChunk(payload.data[currentIndex], 0);
         }
-      } 
+      }
       else if (data.type === 'done' && payload.type === 'files') {
         currentIndex++; isTransferring = false; sendInitialData();
       }
     };
-    
+
     conn.onclose = () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); };
-  }, [conn, payload, resetSpeed, updateSpeed]); 
+  }, [conn, payload, resetSpeed, updateSpeed]);
 
   // Save transfer record
   useEffect(() => {
@@ -941,7 +938,7 @@ const TransferTask = ({ conn, payload }: { conn: any, payload: SharePayload }) =
 };
 
 // --- SENDER VIEW ---
-const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () => void }) => {
+const SenderView = ({ payload, onCancel }: { payload: SharePayload; onCancel: () => void }) => {
   const [peerId, setPeerId] = useState<string | null>(null);
   const [receivers, setReceivers] = useState<any[]>([]);
   const [copied, setCopied] = useState<boolean>(false);
@@ -950,7 +947,7 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
   useEffect(() => {
     let pc: RTCPeerConnection;
     const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
+
     const initializeRoom = async () => {
       try {
         const res = await fetch('https://chocoshare-turn-auth.snahasishdey141.workers.dev/');
@@ -961,14 +958,14 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
 
         socket.on('peer-joined', async () => {
           pc = new RTCPeerConnection({
-            iceServers: [ { urls: "stun:stun.l.google.com:19302" }, ...turnData.iceServers ],
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }, ...turnData.iceServers],
             iceCandidatePoolSize: 10
           });
 
           // Create the Data Channel natively
           const dataChannel = pc.createDataChannel('chocoshare', { negotiated: false });
-          (dataChannel as any).peerConnection = pc; 
-          
+          (dataChannel as any).peerConnection = pc;
+
           dataChannel.onopen = () => {
             setReceivers(prev => [...prev, dataChannel]);
           };
@@ -1007,7 +1004,7 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
       socket.off('signal');
       if (pc) pc.close();
     };
-  }, []); 
+  }, []);
 
   const handleCopy = () => { copyToClipboard(shareUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
@@ -1019,7 +1016,7 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
 
       <div className="p-8 flex flex-col items-center">
         <div className="flex items-center gap-3 w-full glass-card p-4 rounded-2xl mb-6 transition-colors">
-          {payload.type === 'files' ? ( <FileBox className="text-[#7B3F00] dark:text-[#e5b342] w-8 h-8 flex-shrink-0" /> ) : ( <MessageSquare className="text-[#7B3F00] dark:text-[#e5b342] w-8 h-8 flex-shrink-0" /> )}
+          {payload.type === 'files' ? (<FileBox className="text-[#7B3F00] dark:text-[#e5b342] w-8 h-8 flex-shrink-0" />) : (<MessageSquare className="text-[#7B3F00] dark:text-[#e5b342] w-8 h-8 flex-shrink-0" />)}
           <div className="overflow-hidden">
             {payload.type === 'files' ? (
               <>
@@ -1038,17 +1035,17 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
         {peerId && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center w-full">
             <div className="flex flex-col sm:flex-row items-center gap-4 w-full mb-6">
-                <div className="bg-white p-3 rounded-2xl border-4 border-[#C68E17] dark:border-[#e5b342] shadow-lg shrink-0 hover:scale-105 transition-transform glow-gold">
-                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(shareUrl)}&color=3C1F00`} alt="QR Code" className="w-[120px] h-[120px]" />
-                </div>
-                <div className="glass-card-strong rounded-2xl w-full h-full p-4 text-center relative overflow-hidden flex flex-col justify-center min-h-[148px] transition-colors">
-                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-[#C68E17] via-[#d4a373] to-[#7B3F00] dark:from-[#e5b342] dark:via-[#d4a373] dark:to-[#c28415]"></div>
-                  <p className="text-[#7B3F00] dark:text-[#d4a373] font-bold mb-1 uppercase tracking-wider text-[10px]">Share Code</p>
-                  <div className="text-4xl sm:text-3xl md:text-4xl font-display font-black gradient-text tracking-[0.1em] drop-shadow-sm">{peerId}</div>
-                  <p className="text-[#7B3F00]/50 dark:text-[#d4a373]/50 text-[10px] mt-2 font-medium">Scan QR or enter code</p>
-                </div>
+              <div className="bg-white p-3 rounded-2xl border-4 border-[#C68E17] dark:border-[#e5b342] shadow-lg shrink-0 hover:scale-105 transition-transform glow-gold">
+                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(shareUrl)}&color=3C1F00`} alt="QR Code" className="w-[120px] h-[120px]" />
+              </div>
+              <div className="glass-card-strong rounded-2xl w-full h-full p-4 text-center relative overflow-hidden flex flex-col justify-center min-h-[148px] transition-colors">
+                <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-[#C68E17] via-[#d4a373] to-[#7B3F00] dark:from-[#e5b342] dark:via-[#d4a373] dark:to-[#c28415]"></div>
+                <p className="text-[#7B3F00] dark:text-[#d4a373] font-bold mb-1 uppercase tracking-wider text-[10px]">Share Code</p>
+                <div className="text-4xl sm:text-3xl md:text-4xl font-display font-black gradient-text tracking-[0.1em] drop-shadow-sm">{peerId}</div>
+                <p className="text-[#7B3F00]/50 dark:text-[#d4a373]/50 text-[10px] mt-2 font-medium">Scan QR or enter code</p>
+              </div>
             </div>
-            
+
             <div className="w-full flex gap-3 mb-6">
               <button onClick={handleCopy} className="flex-1 glass-button p-3 rounded-xl text-[#7B3F00] dark:text-[#e5b342] text-sm font-bold flex items-center justify-center gap-2">
                 {copied ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />} {copied ? "Copied Link" : "Copy Link"}
@@ -1076,17 +1073,17 @@ const SenderView = ({ payload, onCancel}: { payload: SharePayload; onCancel: () 
 
 // --- RECEIVER VIEW ---
 const ReceiverView = ({ senderId }: { senderId: string }) => {
-  const [status, setStatus] = useState<string>('connecting'); 
+  const [status, setStatus] = useState<string>('connecting');
   const [progress, setProgress] = useState<number>(0);
   const [metadata, setMetadata] = useState<any>(null);
   const [receivedText, setReceivedText] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed(); 
+  const { speed, eta, updateSpeed, resetSpeed } = useTransferSpeed();
   const connRef = useRef<any | null>(null);
   const savedRef = useRef(false);
 
   useEffect(() => {
-    let activeUrls: string[] = []; 
+    let activeUrls: string[] = [];
     let pc: RTCPeerConnection;
     let allFilesMeta: { name: string; size: number }[] = [];
 
@@ -1094,9 +1091,9 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
       try {
         const res = await fetch('https://chocoshare-turn-auth.snahasishdey141.workers.dev/');
         const turnData = await res.json();
-        
+
         pc = new RTCPeerConnection({
-          iceServers: [ { urls: "stun:stun.l.google.com:19302" }, ...turnData.iceServers ],
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }, ...turnData.iceServers],
           iceCandidatePoolSize: 10
         });
 
@@ -1127,9 +1124,9 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
           conn.binaryType = 'arraybuffer'; // Crucial for receiving raw files
           (conn as any).peerConnection = pc; // Hack to keep ConnectionBadge working
           connRef.current = conn;
-          
-          let chunks: any[] = []; 
-          let receivedSize = 0; 
+
+          let chunks: any[] = [];
+          let receivedSize = 0;
           let fileMeta: any = null;
           let lastUiUpdate = 0;
 
@@ -1141,12 +1138,12 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
           conn.onmessage = (e: MessageEvent) => {
             if (typeof e.data !== 'string') {
               // It's a raw file chunk
-              chunks.push(new Blob([e.data])); 
+              chunks.push(new Blob([e.data]));
               receivedSize += e.data.byteLength;
-              
+
               if (receivedSize - lastUiUpdate > 1024 * 1024 || receivedSize >= fileMeta.size) {
-                 setProgress(Math.min(100, (receivedSize / fileMeta.size) * 100));
-                 lastUiUpdate = receivedSize;
+                setProgress(Math.min(100, (receivedSize / fileMeta.size) * 100));
+                lastUiUpdate = receivedSize;
               }
               updateSpeed(receivedSize, fileMeta.size);
               return;
@@ -1160,23 +1157,23 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
               setStatus('complete');
             }
             else if (data.type === 'metadata') {
-              fileMeta = data; setMetadata(data); chunks = []; receivedSize = 0; lastUiUpdate = 0; setProgress(0); setStatus('receiving'); 
+              fileMeta = data; setMetadata(data); chunks = []; receivedSize = 0; lastUiUpdate = 0; setProgress(0); setStatus('receiving');
               allFilesMeta.push({ name: data.name, size: data.size });
-              resetSpeed(); 
-              conn.send(JSON.stringify({ type: 'ready' })); 
-            } 
+              resetSpeed();
+              conn.send(JSON.stringify({ type: 'ready' }));
+            }
             else if (data.type === 'eof') {
               const finalBlob = new Blob(chunks, { type: fileMeta.mime });
               const url = URL.createObjectURL(finalBlob);
-              activeUrls.push(url); 
-              
+              activeUrls.push(url);
+
               const a = document.createElement('a');
               a.href = url; a.download = fileMeta.name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
               conn.send(JSON.stringify({ type: 'done' }));
             }
             else if (data.type === 'all_done') { setStatus('complete'); }
           };
-          
+
           conn.onclose = () => { setStatus(prev => prev !== 'complete' ? 'error' : prev); };
         };
 
@@ -1186,13 +1183,13 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
     };
 
     establishConnection();
-    
-    return () => { 
+
+    return () => {
       socket.off('signal');
-      activeUrls.forEach(url => URL.revokeObjectURL(url)); 
-      if (pc) pc.close(); 
+      activeUrls.forEach(url => URL.revokeObjectURL(url));
+      if (pc) pc.close();
     };
-  }, [senderId, resetSpeed, updateSpeed]); 
+  }, [senderId, resetSpeed, updateSpeed]);
 
   // Save transfer record
   useEffect(() => {
@@ -1223,7 +1220,7 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
 
   return (
     <motion.div initial={{ opacity: 0, scale: 0.9, y: 30 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", bounce: 0.35 }} className="w-full max-w-md mx-auto glass-card-strong rounded-3xl overflow-hidden transition-colors">
-      <div className={`p-4 text-center text-white font-bold flex items-center justify-center gap-2 ${ status === 'connecting' ? 'bg-gradient-to-r from-[#C68E17] to-[#7B3F00] dark:from-[#e5b342] dark:to-[#c28415]' : status === 'receiving' ? 'bg-gradient-to-r from-blue-500 to-blue-600' : status === 'complete' ? 'bg-gradient-to-r from-green-500 to-green-600' : 'bg-gradient-to-r from-red-500 to-red-600' }`}>
+      <div className={`p-4 text-center text-white font-bold flex items-center justify-center gap-2 ${status === 'connecting' ? 'bg-gradient-to-r from-[#C68E17] to-[#7B3F00] dark:from-[#e5b342] dark:to-[#c28415]' : status === 'receiving' ? 'bg-gradient-to-r from-blue-500 to-blue-600' : status === 'complete' ? 'bg-gradient-to-r from-green-500 to-green-600' : 'bg-gradient-to-r from-red-500 to-red-600'}`}>
         {status === 'connecting' && <><Loader2 className="animate-spin" /> Connecting to Sender...</>}
         {status === 'receiving' && <><Download className="animate-bounce" /> Receiving Data...</>}
         {status === 'complete' && <><CheckCircle2 /> Transfer Complete!</>}
@@ -1251,7 +1248,7 @@ const ReceiverView = ({ senderId }: { senderId: string }) => {
         {status === 'connecting' && !metadata && !receivedText && (
           <div className="py-10 flex flex-col items-center text-[#7B3F00] dark:text-[#d4a373]">
             <Wifi className="w-12 h-12 mb-4 animate-pulse opacity-50" />
-            <p className="font-semibold text-center">Looking for sender...<br/>Make sure they haven't closed their tab.</p>
+            <p className="font-semibold text-center">Looking for sender...<br />Make sure they haven't closed their tab.</p>
           </div>
         )}
 
@@ -1331,9 +1328,9 @@ const Footer = ({ onOpenPrivacy, onOpenTerms }: { onOpenPrivacy: () => void, onO
   <footer className="w-full relative z-40 border-t border-[#7B3F00]/8 dark:border-[#d4a373]/8 bg-[#FFFDD0]/70 dark:bg-[#221207]/70 backdrop-blur-xl transition-colors mt-auto">
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-10 sm:gap-8 mb-12">
-        
+
         <div className="md:col-span-2">
-          <div className="flex items-center gap-3 mb-4 cursor-pointer group" onClick={() => {window.location.hash = ''; window.scrollTo(0,0);}}>
+          <div className="flex items-center gap-3 mb-4 cursor-pointer group" onClick={() => { window.location.hash = ''; window.scrollTo(0, 0); }}>
             <img src="/logo.png" alt="ChocoShare Logo" className="w-8 h-8 sm:w-10 sm:h-10 object-contain drop-shadow-md group-hover:scale-110 transition-transform" />
             <h2 className="text-xl sm:text-2xl font-display font-black tracking-tight text-[#3C1F00] dark:text-white transition-colors">
               Choco<span className="text-[#7B3F00] dark:text-[#e5b342] transition-colors">share</span>
@@ -1352,8 +1349,20 @@ const Footer = ({ onOpenPrivacy, onOpenTerms }: { onOpenPrivacy: () => void, onO
         <div>
           <h3 className="font-display font-bold text-[#3C1F00] dark:text-white mb-5 transition-colors uppercase tracking-wider text-sm">Product</h3>
           <ul className="space-y-3 sm:space-y-4">
-            <li><button onClick={() => {window.location.hash = ''; window.scrollTo({ top: 0, behavior: 'smooth' });}} className="text-[#7B3F00]/70 hover:text-[#7B3F00] dark:text-[#d4a373]/70 dark:hover:text-[#e5b342] transition-colors font-medium">Home</button></li>
+            <li><button onClick={() => { window.location.hash = ''; window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-[#7B3F00]/70 hover:text-[#7B3F00] dark:text-[#d4a373]/70 dark:hover:text-[#e5b342] transition-colors font-medium">Home</button></li>
             <li><button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })} className="text-[#7B3F00]/70 hover:text-[#7B3F00] dark:text-[#d4a373]/70 dark:hover:text-[#e5b342] transition-colors font-medium">How it Works</button></li>
+            <li>
+              <a
+                href="https://rebrand.ly/ChocoShareApk"
+                download
+                className="flex items-center gap-1.5 text-[#7B3F00]/70 hover:text-[#7B3F00] dark:text-[#d4a373]/70 dark:hover:text-[#e5b342] transition-colors font-medium"
+              >
+                Download APK
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </a>
+            </li>
           </ul>
         </div>
 
@@ -1383,14 +1392,14 @@ export default function App() {
     return <MaintenanceView />;
   }
   const [showPrivateChat, setShowPrivateChat] = useState(false);
-  const [route, setRoute] = useState<string>('home'); 
+  const [route, setRoute] = useState<string>('home');
   const [payloadToShare, setPayloadToShare] = useState<SharePayload | null>(null);
   const [receiverId, setReceiverId] = useState<string | null>(null);
   const [showReceiveModal, setShowReceiveModal] = useState<boolean>(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState<boolean>(false);
   const [showTermsModal, setShowTermsModal] = useState<boolean>(false);
   const [showHistory, setShowHistory] = useState<boolean>(false);
-  
+
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('theme');
@@ -1427,7 +1436,7 @@ export default function App() {
       }
     };
     window.addEventListener('hashchange', handleHashChange);
-    handleHashChange(); 
+    handleHashChange();
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [payloadToShare]);
 
@@ -1437,21 +1446,21 @@ export default function App() {
       try {
         const req = indexedDB.open('ChocoShareDB', 1);
         req.onupgradeneeded = (e: any) => e.target.result.createObjectStore('shared_store');
-        
+
         req.onsuccess = (e: any) => {
           const db = e.target.result;
           if (!db.objectStoreNames.contains('shared_store')) return;
-          
+
           const tx = db.transaction('shared_store', 'readwrite');
           const store = tx.objectStore('shared_store');
           const getReq = store.get('pending_share');
-          
+
           getReq.onsuccess = () => {
             const files = getReq.result;
             if (files && files.length > 0) {
               // 1. Delete them from DB so it doesn't re-trigger on refresh
               store.delete('pending_share');
-              
+
               // 2. Automatically kick off the sharing process
               startSharing({ type: 'files', data: files });
             }
@@ -1461,7 +1470,7 @@ export default function App() {
         console.error('Error loading natively shared files:', error);
       }
     };
-    
+
     checkSharedFiles();
   }, []);
 
@@ -1478,7 +1487,7 @@ export default function App() {
 
       {/* --- HEADER / NAVBAR --- */}
       <header className="fixed top-0 left-0 w-full p-3 sm:p-6 flex items-center justify-between z-40 bg-gradient-to-b from-[#FFFDD0] dark:from-[#221207] to-transparent transition-colors">
-        
+
         {/* LEFT: BRANDING */}
         <div className="flex items-center gap-2 sm:gap-3 cursor-pointer hover:opacity-80 transition-opacity min-w-0" onClick={() => window.location.hash = ''}>
           <div className="flex-shrink-0 flex items-center justify-center hover:rotate-3 transition-transform">
@@ -1491,9 +1500,9 @@ export default function App() {
 
         {/* RIGHT: ICONS & BUTTONS */}
         <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
-          
+
           {/* History Button */}
-          <button 
+          <button
             onClick={() => setShowHistory(true)}
             className="w-8 h-8 sm:w-10 sm:h-10 glass-button rounded-full flex items-center justify-center group"
             aria-label="Transfer History"
@@ -1501,9 +1510,9 @@ export default function App() {
             <History className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-[#7B3F00] dark:text-[#d4a373] group-hover:text-[#C68E17] dark:group-hover:text-[#e5b342] transition-colors" />
           </button>
 
-          <a 
-            href="https://instagram.com/snahasish0915" 
-            target="_blank" 
+          <a
+            href="https://instagram.com/snahasish0915"
+            target="_blank"
             rel="noopener noreferrer"
             className="w-8 h-8 sm:w-10 sm:h-10 glass-button rounded-full flex items-center justify-center group"
             aria-label="Follow on Instagram"
@@ -1511,25 +1520,25 @@ export default function App() {
             <Instagram className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-pink-600 dark:text-pink-400 group-hover:scale-110 transition-transform" />
           </a>
 
-          <a 
-            href="https://github.com/basic30" 
-            target="_blank" 
+          <a
+            href="https://github.com/basic30"
+            target="_blank"
             rel="noopener noreferrer"
             className="w-8 h-8 sm:w-10 sm:h-10 glass-button rounded-full flex items-center justify-center group"
           >
             <Github className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-800 dark:text-gray-200 group-hover:scale-110 transition-transform" />
           </a>
 
-          <button 
+          <button
             onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
             className="hidden md:flex w-10 h-10 glass-button rounded-full items-center justify-center group"
             title="How it works"
           >
             <Info className="w-[18px] h-[18px] text-[#7B3F00] dark:text-[#e5b342] group-hover:scale-110 transition-transform" />
           </button>
-          
-          <button 
-            onClick={handleToggleTheme} 
+
+          <button
+            onClick={handleToggleTheme}
             className="w-8 h-8 sm:w-10 sm:h-10 glass-button rounded-full flex items-center justify-center relative overflow-hidden group"
             aria-label="Toggle Theme"
           >
@@ -1569,15 +1578,15 @@ export default function App() {
           )}
           {route === 'receive' && receiverId && (
             <div className="w-full mt-8 sm:mt-16 mb-20 flex justify-center">
-               <ReceiverView key={`receive-${receiverId}`} senderId={receiverId} />
+              <ReceiverView key={`receive-${receiverId}`} senderId={receiverId} />
             </div>
           )}
         </AnimatePresence>
       </main>
 
-      <Footer 
-        onOpenPrivacy={() => setShowPrivacyModal(true)} 
-        onOpenTerms={() => setShowTermsModal(true)} 
+      <Footer
+        onOpenPrivacy={() => setShowPrivacyModal(true)}
+        onOpenTerms={() => setShowTermsModal(true)}
       />
 
       <ReceiveModal isOpen={showReceiveModal} onClose={() => setShowReceiveModal(false)} />
@@ -1611,7 +1620,7 @@ export default function App() {
         aria-label="Open Private Chat"
       >
         <MessageSquarePlus className="w-7 h-7 group-hover:animate-pulse" />
-        
+
         {/* Optional Notification Dot */}
         <span className="absolute top-0 right-0 flex h-3 w-3">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -1625,7 +1634,7 @@ export default function App() {
           <PrivateChat onClose={() => setShowPrivateChat(false)} />
         )}
       </AnimatePresence>
-      
+
     </div>
   );
 }
